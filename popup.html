@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Bezpieczny wizerunek</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="risk-overview" aria-label="Ocena prywatności">
+        <div class="risk-hero">
+          <div id="securityWheel" class="security-wheel" aria-label="Ocena prywatności: brak danych">
+            <span id="securityWheelText">?</span>
+            <small id="securityWheelBadge">brak danych</small>
+          </div>
+
+          <div class="risk-copy">
+            <span class="eyebrow">Czy Twoja prywatność jest zagrożona?</span>
+            <strong id="riskLevelValue">Jeszcze tego nie wiemy</strong>
+            <p id="riskSummaryText">Sprawdź stronę, aby zobaczyć, kto może uzyskać dostęp do zdjęć i pól hasła.</p>
+            <p id="riskMeaningText" class="risk-meaning">Wynik dotyczy wyłącznie aktualnie otwartej strony.</p>
+            <p id="statusText" class="status-text status-inline" role="status">Sprawdzam stan strony...</p>
+          </div>
+
+          <div class="risk-total" aria-label="Liczba typów problemów">
+            <span id="totalIssuesValue">0</span>
+            <small>typów problemów</small>
+          </div>
+        </div>
+
+        <div id="nextStepsPanel" class="next-steps" hidden>
+          <div>
+            <span class="eyebrow">Co to oznacza dla Ciebie</span>
+            <strong id="nextStepTitle">Sprawdź szczegóły</strong>
+          </div>
+          <p id="nextStepText">Poniżej znajdziesz dowody i dalsze kroki.</p>
+        </div>
+
+        <div class="metric-grid" aria-label="Najważniejsze ustalenia">
+          <button id="imageMetricCard" type="button" class="metric-card" data-view="images">
+            <span>Zdjęcia bez poprawnej autoryzacji</span>
+            <strong id="summaryAuthorizationImages">0</strong>
+            <small id="summaryImageDetails">W pamięci: 0 · dostępne dla Google: 0</small>
+          </button>
+          <button id="scriptMetricCard" type="button" class="metric-card" data-view="scripts">
+            <span>Domeny spoza tej strony</span>
+            <strong id="summaryScriptDomains">0</strong>
+            <small id="summaryScriptDetails">Z dostępem do zdjęć: 0</small>
+          </button>
+          <button id="passwordMetricCard" type="button" class="metric-card" data-view="password">
+            <span>Domeny przy polach hasła</span>
+            <strong id="summaryPasswordDomains">0</strong>
+            <small id="summaryPasswordDetails">Pola hasła: 0 · odczyt wartości: 0</small>
+          </button>
+        </div>
+      </section>
+
+      <section id="scanControls" class="toolbar scan-toolbar" data-state="idle" aria-label="Sterowanie sprawdzaniem">
+        <div class="scan-state" role="status" aria-live="polite" aria-atomic="true">
+          <span class="scan-state-dot" aria-hidden="true"></span>
+          <div class="scan-state-copy">
+            <strong id="scanStateTitle">Skanowanie nieaktywne</strong>
+            <small id="scanStateDescription">Kliknij „Sprawdź stronę”, aby rozpocząć.</small>
+          </div>
+        </div>
+        <div class="scan-actions">
+          <button id="startButton" type="button" class="primary">Sprawdź stronę</button>
+          <button id="stopButton" type="button" class="danger" hidden>Zakończ skan</button>
+        </div>
+      </section>
+
+      <nav class="tabs" aria-label="Dowody techniczne">
+        <button id="imagesTab" type="button" class="tab active" aria-pressed="true">Zdjęcia</button>
+        <button id="scriptsTab" type="button" class="tab" aria-pressed="false">Domeny zewnętrzne</button>
+        <button id="passwordTab" type="button" class="tab" aria-pressed="false">Pola hasła</button>
+      </nav>
+
+      <section id="imagesView" class="view active" aria-label="Dowody dotyczące zdjęć">
+        <div class="view-header">
+          <div>
+            <span class="evidence-label">Dowód</span>
+            <h2>Zdjęcia bez poprawnej autoryzacji</h2>
+            <p>Każde pokazane zdjęcie zwróciło identyczną treść bez aktywnej sesji. Serwer nie uzależnił dostępu od potwierdzenia tożsamości i uprawnienia osoby pobierającej.</p>
+          </div>
+          <div class="view-actions">
+            <button id="exportPdfButton" type="button" class="report-button">Pobierz PDF</button>
+            <button id="exportReportZipButton" type="button">Pobierz komplet ZIP</button>
+            <button id="copyImageLinksButton" type="button">Kopiuj linki</button>
+            <button id="exportImagesButton" type="button">Eksport JSON</button>
+          </div>
+        </div>
+        <div id="resultsGrid" class="image-grid">
+          <p class="empty">Nie zebrano jeszcze zdjęć.</p>
+        </div>
+      </section>
+
+      <section id="scriptsView" class="view" aria-label="Dowody dotyczące domen zewnętrznych">
+        <div class="view-header">
+          <div>
+            <span class="evidence-label">Dowód</span>
+            <h2>Domeny zewnętrzne z dostępem do tej strony</h2>
+            <p>To firmy i usługi spoza domeny strony. Wyróżniamy te, których skrypty mogą odczytać treść znalezionych zdjęć.</p>
+          </div>
+          <div class="view-actions">
+            <button id="copyThirdPartyButton" type="button">Kopiuj domeny</button>
+            <button id="exportScriptsJsonButton" type="button">Eksport JSON</button>
+            <button id="exportScriptsCsvButton" type="button">Eksport CSV</button>
+          </div>
+        </div>
+
+        <div class="script-summary">
+          <div><span>Sprawdzana strona</span><strong id="pageUrlValue">-</strong></div>
+          <div><span>Domena strony</span><strong id="pageOriginValue">-</strong></div>
+          <div><span>Wykryte skrypty</span><strong id="totalScriptsValue">0</strong></div>
+          <div><span>Skrypty zewnętrzne</span><strong id="thirdPartyScriptsValue">0</strong></div>
+          <div><span>Domeny zewnętrzne</span><strong id="thirdPartyDomainsValue">0</strong></div>
+        </div>
+
+        <div id="scriptTree" class="script-tree">
+          <p class="empty">Nie zebrano jeszcze domen zewnętrznych.</p>
+        </div>
+      </section>
+
+      <section id="passwordView" class="view" aria-label="Dowody dotyczące pól hasła">
+        <div class="view-header critical-header">
+          <div>
+            <span class="evidence-label">Dowód krytyczny</span>
+            <h2>Domeny zewnętrzne przy polach hasła</h2>
+            <p>Obcy skrypt działający przy polu hasła ma techniczną możliwość odczytania jego wartości. Potwierdzony odczyt lub zapis pokazujemy osobno jako silniejszy dowód.</p>
+          </div>
+        </div>
+
+        <div class="script-summary password-summary">
+          <div><span>Pola hasła</span><strong id="passwordInputsValue">0</strong></div>
+          <div><span>Domeny zewnętrzne</span><strong id="passwordScriptsValue">0</strong></div>
+          <div><span>Odczyt lub zapis wartości</span><strong id="passwordAccessesValue">0</strong></div>
+        </div>
+
+        <div id="passwordTree" class="script-tree">
+          <p class="empty">Nie wykryto jeszcze pola hasła.</p>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
