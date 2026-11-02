@@ -16,6 +16,7 @@
  * @property {string} [url]
  * @property {string} [resourceType]
  * @property {string} [mimeType]
+ * @property {string} [detectedMimeType] Format rozpoznany po sygnaturze bajtów; pusty string oznacza brak obsługiwanej sygnatury.
  * @property {number|null} [status]
  * @property {boolean} [fromDiskCache]
  * @property {boolean} [fromServiceWorker]
@@ -50,6 +51,7 @@
  * @property {string} domain
  * @property {number|null} status
  * @property {string} mimeType
+ * @property {string} [detectedMimeType] Wynik analizy bajtów, niezależny od oryginalnego MIME serwera. Brak pola oznacza starszy lub niesprawdzony rekord.
  * @property {string} resourceType
  * @property {string} requestId
  * @property {boolean} fromDiskCache
@@ -302,7 +304,7 @@
  * @property {number} pollIntervalMs
  * @property {PasswordAccessGroup[]} groups
  */
-/** @typedef {{requestId:string, url:string}} ImageComparisonJob */
+/** @typedef {{requestId:string, url:string, metadata:NetworkMetadata}} ImageComparisonJob */
 /** @typedef {{origin:string, topAccessible:boolean|null}} ImageContextAccess */
 /** @typedef {{id:number, origin:string, name:string, frameId:string, isDefault?:boolean, passwordAccess?:{scope:'accessible'|'isolated',documentRevision:number}, imageAccess?:ImageContextAccess & {documentRevision:number}}} ExecutionContext */
 /**
@@ -326,7 +328,8 @@
  * @property {Map<string, ImageRecord>} imagesByUrl Indeks rekordów zdjęć po pełnym URL; aktualizacja rekordu jest widoczna także w images.
  * @property {Map<string, NetworkMetadata>} imageRequests Tymczasowe częściowe metadane po requestId, scalane do loadingFinished lub loadingFailed.
  * @property {ImageComparisonJob[]} imageBodyCompareQueue Zadania oczekujące na rozpoczęcie, pobierane w kolejności dodania.
- * @property {Set<string>} imageBodyCompareQueuedUrls URL-e zadań oczekujących; URL znika ze zbioru przy rozpoczęciu zadania.
+ * @property {Set<string>} imageBodyCompareSeenRequestIds Identyfikatory odpowiedzi już zleconych do analizy w tym skanie.
+ * @property {Map<string,string>} imageBodyCompareLatestByUrl Ostatni requestId dla URL; starsze zadanie nie publikuje wyniku nowszej odpowiedzi.
  * @property {number} imageBodyCompareActiveCount Licznik dla limitu współbieżności; zerowanie stanu i odłączenie zerują go bez anulowania rozpoczętych Promise.
  * @property {Map<string, RobotsCheck>} robotsChecksByOrigin
  * @property {Set<string>} robotsChecksInFlight
@@ -375,10 +378,10 @@
  * @property {string|number} error
  * @property {string} mimeType
  */
-/** @typedef {{bytes:Uint8Array<ArrayBuffer>, createPreview:(image:ImageRecord)=>string}} CapturedImageBody */
+/** @typedef {{bytes:Uint8Array<ArrayBuffer>, byteLength?:number, truncated?:boolean, createPreview:(image:ImageRecord)=>string}} CapturedImageBody */
 /**
  * @typedef {object} ResourcePorts
- * @property {(tabId:number,frameId:string,url:string)=>Promise<LoadedResource>} loadWithoutCredentials
+ * @property {(tabId:number,frameId:string,url:string,maxBytes?:number)=>Promise<LoadedResource>} loadWithoutCredentials
  * @property {(tabId:number,body:import('./cdp.js').ResourceBody)=>string|Promise<string>} readResourceText
  * @property {(tabId:number,body:import('./cdp.js').ResourceBody,maxBytes:number)=>Uint8Array<ArrayBuffer>|Promise<Uint8Array<ArrayBuffer>>} readResourceBytes
  * @property {(tabId:number,requestId:string)=>Promise<CapturedImageBody>} readCapturedImageBody

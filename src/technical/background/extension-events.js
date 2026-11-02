@@ -40,6 +40,7 @@ import { PASSWORD_ACCESS_BINDING } from './protocol.js';
  * @property {PageHandlers["handleFrameNavigated"]} handleFrameNavigated
  * @property {NetworkHandlers["handleRequestWillBeSent"]} handleRequestWillBeSent
  * @property {NetworkHandlers["handleResponseReceived"]} handleResponseReceived
+ * @property {NetworkHandlers["handleDataReceived"]} handleDataReceived
  * @property {NetworkHandlers["handleLoadingFinished"]} handleLoadingFinished
  * @property {NetworkHandlers["handleLoadingFailed"]} handleLoadingFailed
  * @property {NetworkHandlers["handleRequestServedFromCache"]} handleRequestServedFromCache
@@ -60,6 +61,7 @@ export function registerExtensionListeners({
   handleScriptParsed,
   handleRequestWillBeSent,
   handleResponseReceived,
+  handleDataReceived,
   handleLoadingFinished,
   handleLoadingFailed,
   handleRequestServedFromCache,
@@ -150,6 +152,8 @@ export function registerExtensionListeners({
       handleRequestWillBeSent(state, /** @type {NetworkEvent} */ (params));
     } else if (method === 'Network.responseReceived') {
       handleResponseReceived(state, /** @type {NetworkEvent} */ (params));
+    } else if (method === 'Network.dataReceived') {
+      handleDataReceived(state, /** @type {{requestId:string,data?:string,dataLength?:number}} */ (params));
     } else if (method === 'Network.loadingFinished') {
       handleLoadingFinished(state, /** @type {NetworkEvent} */ (params));
     } else if (method === 'Network.loadingFailed') {

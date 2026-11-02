@@ -45,6 +45,7 @@ export function createImageRecorder({ clock, scheduleRobotsCheckForImage }) {
    */
   function isImageLike(metadata) {
     return (
+      Boolean(metadata.detectedMimeType) ||
       metadata.resourceType === 'Image' ||
       (typeof metadata.mimeType === 'string' && metadata.mimeType.toLowerCase().startsWith('image/')) ||
       isTypicalImageUrl(metadata.url)
@@ -70,7 +71,7 @@ export function createImageRecorder({ clock, scheduleRobotsCheckForImage }) {
    * @param {NetworkMetadata} metadata
    */
   function addOrUpdateImage(state, metadata) {
-    if (!metadata.url || !isImageLike(metadata)) {
+    if (!metadata.url || (!isImageLike(metadata) && !state.imagesByUrl.has(metadata.url))) {
       return;
     }
 
@@ -78,6 +79,23 @@ export function createImageRecorder({ clock, scheduleRobotsCheckForImage }) {
 
     const existing = state.imagesByUrl.get(metadata.url);
     if (existing) {
+      // Wynik analizy bajtów należy do jednego requestId. Nie łącz go z nagłówkami
+      // poprzedniej odpowiedzi tego samego URL ani z danymi nowszego zdarzenia CDP.
+      if (metadata.detectedMimeType !== undefined) {
+        existing.detectedMimeType = metadata.detectedMimeType;
+        existing.status = normalizeStatus(metadata.status);
+        existing.mimeType = metadata.mimeType || '';
+        existing.resourceType = metadata.resourceType || '';
+        existing.requestId = metadata.requestId || '';
+        existing.headers = normalizedHeaders;
+        existing.fromDiskCache = metadata.fromDiskCache === true;
+        existing.fromServiceWorker = metadata.fromServiceWorker === true;
+        existing.encodedDataLength = normalizeEncodedDataLength(metadata.encodedDataLength);
+        return;
+      }
+      // Po rozpoznaniu kolejna odpowiedź publikuje nowy zestaw dowodów dopiero po
+      // analizie własnych bajtów. Częściowe zdarzenia nie zmieniają starego wyniku.
+      if (existing.detectedMimeType !== undefined) return;
       if (metadata.status !== undefined) {
         existing.status = normalizeStatus(metadata.status);
       }
@@ -107,6 +125,7 @@ export function createImageRecorder({ clock, scheduleRobotsCheckForImage }) {
     }
 
     const parsed = parseUrl(metadata.url);
+    /** @type {import('../../../types/scanning.js').ImageRecord} */
     const image = {
       url: metadata.url,
       domain: parsed.hostname,
@@ -120,6 +139,9 @@ export function createImageRecorder({ clock, scheduleRobotsCheckForImage }) {
       headers: normalizedHeaders,
       timestamp: clock.nowIso()
     };
+    if (metadata.detectedMimeType !== undefined) {
+      image.detectedMimeType = metadata.detectedMimeType;
+    }
 
     // Mapa i tablica przechowują ten sam obiekt: późniejszy zapis bodyComparison widać w obu.
     // Mapa służy do wyszukania po pełnym URL, tablica zachowuje kolejność w zwracanym wyniku.

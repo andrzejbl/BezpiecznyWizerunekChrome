@@ -1,6 +1,8 @@
 /** @typedef {import('../../../types/scanning.js').ScanState} ScanState */
 /** @typedef {import('../../../types/cdp.js').NetworkEvent} NetworkEvent */
 
+import { startResponseBodyCapture, appendResponseBodyData, discardResponseBodyCapture } from './response-body-capture.js';
+
 /**
  * @typedef {object} NetworkObservationPorts
  * @property {ReturnType<typeof import("../../business/scanning/image-comparison-flow.js").createImageComparisonFlow>["enqueueImageBodyComparison"]} enqueueImageBodyComparison
@@ -30,6 +32,8 @@ export function createNetworkObservationHandlers({
    * @param {NetworkEvent} params
    */
   function handleRequestWillBeSent(state, params) {
+    // Odczyt jest pasywny: nie czekaj na CDP i nigdy nie wstrzymuj żądania strony.
+    void startResponseBodyCapture(state.tabId, params.requestId, state.imageBodyCompareQueue);
     const requestUrl = params.request && params.request.url;
     const metadata = mergeImageRequestMetadata(state, params.requestId, {
       requestId: params.requestId,
@@ -98,7 +102,7 @@ export function createNetworkObservationHandlers({
     });
 
     addOrUpdateImage(state, metadata);
-    enqueueImageBodyComparison(state, params.requestId, metadata.url, params.encodedDataLength);
+    enqueueImageBodyComparison(state, params.requestId, metadata.url, params.encodedDataLength, metadata);
     state.imageRequests.delete(params.requestId);
     state.scriptRequests.delete(params.requestId);
   }
@@ -108,6 +112,7 @@ export function createNetworkObservationHandlers({
    * @param {NetworkEvent} params
    */
   function handleLoadingFailed(state, params) {
+    discardResponseBodyCapture(state.tabId, params.requestId);
     const metadata = mergeImageRequestMetadata(state, params.requestId, {
       requestId: params.requestId
     });
@@ -141,5 +146,10 @@ export function createNetworkObservationHandlers({
     addOrUpdateImage(state, metadata);
   }
 
-  return { handleRequestWillBeSent, handleResponseReceived, handleLoadingFinished, handleLoadingFailed, handleRequestServedFromCache };
+  /** @param {ScanState} state @param {{requestId:string,data?:string,dataLength?:number}} params */
+  function handleDataReceived(state, params) {
+    appendResponseBodyData(state.tabId, params.requestId, params.data || '', params.dataLength);
+  }
+
+  return { handleRequestWillBeSent, handleResponseReceived, handleLoadingFinished, handleLoadingFailed, handleRequestServedFromCache, handleDataReceived };
 }

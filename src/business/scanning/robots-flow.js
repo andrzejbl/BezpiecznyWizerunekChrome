@@ -14,6 +14,7 @@
 // Tu zapadają decyzje dotyczące HTTP; pobieranie odpowiedzi i odczyt strumienia zapewniają porty.
 
 import { parseUrl } from './urls.js';
+import { ROBOTS_READ_LIMIT_BYTES } from './config.js';
 import { getRobotsUrlForOrigin, isRobotsCheckableUrl, parseRobotsTxt } from './robots-rules.js';
 
 /**
@@ -37,7 +38,7 @@ export function createRobotsFlow({
       throw new Error('Debugger is not attached to a loaded frame.');
     }
 
-    const resource = await loadWithoutCredentials(state.tabId, state.mainFrameId, robotsUrl);
+    const resource = await loadWithoutCredentials(state.tabId, state.mainFrameId, robotsUrl, ROBOTS_READ_LIMIT_BYTES);
     const httpStatusCode = resource.status;
     const baseResult = {
       origin,

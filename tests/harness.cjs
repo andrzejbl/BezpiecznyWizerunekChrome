@@ -24,10 +24,11 @@ function clone(value) {
 }
 
 function createSignal() {
-  const listeners = [];
+  const listeners = new Set();
   return {
-    addListener(listener) { listeners.push(listener); },
-    emit(...args) { return listeners.map((listener) => listener(...args)); }
+    addListener(listener) { listeners.add(listener); },
+    removeListener(listener) { listeners.delete(listener); },
+    emit(...args) { return [...listeners].map((listener) => listener(...args)); }
   };
 }
 
@@ -74,7 +75,7 @@ function createContext(extra = {}) {
   };
   const context = vm.createContext({
     console, URL, Blob, TextEncoder, TextDecoder, Uint8Array, ArrayBuffer,
-    DataView, crypto, atob, btoa, Date: FixedDate,
+    DataView, crypto, atob, btoa, AbortController, Headers, ReadableStream, Date: FixedDate,
     setTimeout: clock.setTimeout,
     clearTimeout: clock.clearTimeout,
     setInterval: clock.setInterval,
@@ -268,16 +269,26 @@ async function createPopup(original, state, options = {}) {
 }
 
 async function createBackground(original, options = {}) {
+  const imageBody = (await fs.readFile(path.join(__dirname, 'fixtures', 'preview.jpg'))).toString('base64');
   const onMessage = createSignal();
   const onEvent = createSignal();
   const onDetach = createSignal();
   const onRemoved = createSignal();
   const commands = [];
+  const fetches = [];
+  const workerBodies = new Map();
   const chrome = {
-    runtime: { lastError: null, onMessage },
+    runtime: {
+      lastError: null, onMessage,
+      getManifest: () => ({ background: { service_worker: 'background.js' } }),
+      getURL: (file) => 'chrome-extension://fixture/' + file
+    },
     tabs: { query: async () => [{ id: 42, url: 'https://konto.example.pl/gallery' }], onRemoved },
     debugger: {
       onEvent, onDetach,
+      getTargets(callback) {
+        callback([{ id: 'extension-worker', type: 'service_worker', url: 'chrome-extension://fixture/background.js', attached: false }]);
+      },
       attach(target, version, callback) {
         commands.push(clone({ method: 'attach', target, version }));
         if (options.attachError) chrome.runtime.lastError = { message: options.attachError };
@@ -298,10 +309,14 @@ async function createBackground(original, options = {}) {
             : { href: 'https://konto.example.pl/gallery', url: 'https://konto.example.pl/gallery', origin: 'https://konto.example.pl' } } };
         }
         if (method === 'Page.getFrameTree') result = { frameTree: { frame: { id: 'frame-main', url: 'https://konto.example.pl/gallery' } } };
-        if (method === 'Network.getResponseBody') result = { body: 'fixture-image-body', base64Encoded: false };
+        if (method === 'Network.getResponseBody') result = target.targetId
+          ? workerBodies.get(params.requestId)
+          : { body: imageBody, base64Encoded: true };
+        if (method === 'Network.loadNetworkResource' && !original) throw new Error('Produkcja nie może pobierać przez Network.loadNetworkResource.');
         if (method === 'Network.loadNetworkResource') result = { resource: {
           success: true, httpStatusCode: 200,
-          content: params.url.endsWith('/robots.txt') ? 'User-agent: *\nAllow: /\n' : 'fixture-image-body',
+          content: params.url.endsWith('/robots.txt') ? 'User-agent: *\nAllow: /\n' : imageBody,
+          base64Encoded: !params.url.endsWith('/robots.txt'),
           headers: { 'content-type': 'image/jpeg', 'cache-control': 'public, max-age=60', 'access-control-allow-origin': '*' },
           mimeType: 'image/jpeg'
         } };
@@ -309,17 +324,26 @@ async function createBackground(original, options = {}) {
       }
     }
   };
-  const { context, clock } = createContext({ chrome, fetch: async (url, init) => {
-    if (init.credentials !== 'omit') throw new Error('Oczekiwano pobrania bez cookies.');
-    return new Response(url.endsWith('/robots.txt') ? 'User-agent: *\nAllow: /\n' : 'fixture-image-body', {
-      status: 200,
+  const { context, clock } = createContext({ chrome, fetch: async (url, options) => {
+    if (original) throw new Error('Oryginalna fixture nie używa fetch.');
+    fetches.push({ url, options: { credentials: options.credentials, mode: options.mode, cache: options.cache, redirect: options.redirect } });
+    const requestId = 'worker-request-' + fetches.length;
+    const target = { targetId: 'extension-worker' };
+    const bytes = url.endsWith('/robots.txt') ? Buffer.from('User-agent: *\nAllow: /\n') : Buffer.from(imageBody, 'base64');
+    workerBodies.set(requestId, { body: bytes.toString('base64'), base64Encoded: true });
+    onEvent.emit(target, 'Network.requestWillBeSent', { requestId, type: 'Fetch', request: { url, method: 'GET' } });
+    onEvent.emit(target, 'Network.responseReceived', { requestId, type: 'Fetch', hasExtraInfo: false, response: {
+      url, status: 200, mimeType: 'image/jpeg',
       headers: { 'content-type': 'image/jpeg', 'cache-control': 'public, max-age=60', 'access-control-allow-origin': '*' }
-    });
+    } });
+    onEvent.emit(target, 'Network.dataReceived', { requestId, dataLength: bytes.length, encodedDataLength: bytes.length });
+    onEvent.emit(target, 'Network.loadingFinished', { requestId, encodedDataLength: bytes.length });
+    return { type: 'opaque', status: 0, ok: false, body: null, headers: new Headers() };
   } });
   if (original) await loadClassic(context, 'background.js');
   else await createModuleLoader(context).load(path.join(projectRoot, 'background.js'));
   return {
-    clock, commands,
+    clock, commands, fetches,
     message(type) {
       return new Promise((resolve) => onMessage.emit({ type }, {}, (response) => resolve(clone(response))));
     },

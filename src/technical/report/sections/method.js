@@ -20,7 +20,7 @@ export function appendMethodSection(items, context) {
   );
   pushPdfLine(
     items,
-    '2. Body zdjęcia z sesji jest porównywane z żądaniem CDP includeCredentials=false. Wynik wymaga statusów 2xx, identycznej długości i identycznego SHA-256.',
+    '2. Body zdjęcia z sesji jest porównywane z fetch własnego workera z credentials=omit i cache=no-store. CDP pasywnie odczytuje pełne nagłówki i kompletne body. Wynik wymaga statusów 2xx, identycznej długości i identycznego SHA-256.',
     { size: 9, indent: 8 }
   );
   pushPdfLine(

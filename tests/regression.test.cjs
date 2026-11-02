@@ -31,7 +31,7 @@ test('static appearance and extension permissions are preserved', async () => {
   const actual = JSON.parse(manifest);
   const expected = JSON.parse(oldManifest);
   delete actual.background.type;
-  assert.equal(actual.version, '2.1.17');
+  assert.equal(actual.version, '2.1.22');
   actual.version = expected.version;
   assert.deepEqual(actual, expected, 'Only the background module loading mode may change');
 });
@@ -84,36 +84,42 @@ test('popup preserves copy, JSON and CSV export contents', async () => {
   assert.equal((await after.downloads()).length, 3);
 });
 
-for (const format of ['png', 'webp']) test(format.toUpperCase() + ' spełniający warunki trafia do widoku, podsumowania, schowka oraz JSON, PDF i ZIP', async () => {
-  // Atrapa Image symuluje wymiary i błędy; podgląd PNG/WebP jest wejściem adaptera raportu.
-  const png = {
+for (const [format, mimeType, detectedMimeType] of [
+  ['png', 'image/png'], ['webp', 'image/webp'], ['jpg', 'application/octet-stream'],
+  ['extensionless', 'text/plain', 'image/jpeg']
+])
+test(format.toUpperCase() + ' (' + mimeType + ') spełniający warunki trafia do widoku, podsumowania, schowka oraz JSON, PDF i ZIP', async () => {
+  // Atrapa Image symuluje wymiary i błędy; podgląd jest wejściem adaptera raportu.
+  const sample = {
     ...clone(fixture.image),
-    url: 'https://cdn.example.net/photo.' + format,
-    mimeType: 'image/' + format,
-    headers: { ...clone(fixture.image.headers), 'content-type': 'image/' + format },
+    url: format === 'extensionless' ? 'https://cdn.example.net/download?token=fixture' : 'https://cdn.example.net/photo.' + format,
+    mimeType,
+    ...(detectedMimeType ? { detectedMimeType } : {}),
+    headers: { ...clone(fixture.image.headers), 'content-type': mimeType },
     previewDataUrl: format === 'webp'
       ? 'data:image/webp;base64,UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA'
-      : 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII='
+      : format === 'jpg' || format === 'extensionless' ? fixture.image.reportPreviewJpeg.dataUrl
+        : 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII='
   };
-  delete png.reportPreviewJpeg;
-  const withoutPreview = { ...png, previewDataUrl: '' };
+  delete sample.reportPreviewJpeg;
+  const withoutPreview = { ...sample, previewDataUrl: '' };
   const images = [
-    png,
+    sample,
     { ...withoutPreview, url: 'https://cdn.example.net/small.' + format },
     { ...withoutPreview, url: 'https://cdn.example.net/broken.' + format },
     { ...withoutPreview, url: 'https://cdn.example.net/private.' + format, bodyComparison: { improperAuthorization: false } },
-    { ...withoutPreview, url: 'https://cdn.example.net/icon.gif', mimeType: 'image/gif' }
+    { ...withoutPreview, url: 'https://cdn.example.net/icon.gif', mimeType: 'image/gif', detectedMimeType: '' }
   ];
   const state = emptyState({ ...clone(fixture.latestState), status: 'stopped', scanning: false, attached: false, images, imageCount: images.length });
   const app = await createPopup(false, state);
   const tiles = app.document.getElementById('resultsGrid').children;
   assert.equal(tiles.length, 1);
-  assert.equal(tiles[0].href, png.url);
-  assert.equal(tiles[0].children[0].src, png.previewDataUrl);
+  assert.equal(tiles[0].href, sample.url);
+  assert.equal(tiles[0].children[0].src, sample.previewDataUrl);
   assert.equal(app.document.getElementById('summaryAuthorizationImages').textContent, '1');
 
   await app.click('copyImageLinksButton');
-  assert.deepEqual(app.clipboard, [png.url]);
+  assert.deepEqual(app.clipboard, [sample.url]);
   for (const button of ['exportImagesButton', 'exportPdfButton', 'exportReportZipButton']) await app.click(button);
 
   const downloads = await app.downloads();
@@ -123,13 +129,15 @@ for (const format of ['png', 'webp']) test(format.toUpperCase() + ' spełniając
   const zip = downloads.find(({ filename }) => filename.endsWith('.zip'));
   const exportedImages = JSON.parse(json.bytes.toString());
   assert.equal(exportedImages.length, 1);
-  assert.equal(exportedImages[0].url, png.url);
-  assert.equal(exportedImages[0].mimeType, 'image/' + format);
-  assert.deepEqual(exportedImages[0].bodyComparison, png.bodyComparison);
+  assert.equal(exportedImages[0].url, sample.url);
+  assert.equal(exportedImages[0].mimeType, mimeType);
+  assert.equal(exportedImages[0].detectedMimeType, detectedMimeType);
+  assert.equal(exportedImages[0].headers['content-type'], mimeType);
+  assert.deepEqual(exportedImages[0].bodyComparison, sample.bodyComparison);
   assert.equal(exportedImages[0].previewDataUrl, undefined);
   assert.equal(pdf.bytes.subarray(0, 8).toString(), '%PDF-1.7');
   assert.ok(pdf.bytes.includes(Buffer.from('/DCTDecode')), 'Podgląd do PDF jest kodowany jako JPEG');
-  assert.ok(pdf.bytes.includes(Buffer.from(png.url)), 'PDF zawiera dowód źródłowego obrazu');
+  assert.ok(pdf.bytes.includes(Buffer.from(sample.url)), 'PDF zawiera dowód źródłowego obrazu');
 
   // Zapis ZIP używa nieskompresowanych wpisów; odczytujemy ich faktyczną treść.
   const entries = new Map();
@@ -149,9 +157,11 @@ for (const format of ['png', 'webp']) test(format.toUpperCase() + ' spełniając
   const evidence = JSON.parse(evidenceEntry[1].toString());
   const findings = evidence.findings.improperAuthorizationImages;
   assert.equal(findings.length, 1);
-  assert.equal(findings[0].url, png.url);
-  assert.equal(findings[0].mimeType, 'image/' + format);
-  assert.deepEqual(findings[0].bodyComparison, png.bodyComparison);
+  assert.equal(findings[0].url, sample.url);
+  assert.equal(findings[0].mimeType, mimeType);
+  assert.equal(findings[0].detectedMimeType, detectedMimeType);
+  assert.equal(findings[0].headers['content-type'], mimeType);
+  assert.deepEqual(findings[0].bodyComparison, sample.bodyComparison);
   assert.equal(findings[0].reportPreviewJpeg, undefined);
   assert.equal(evidence.summary.improperAuthorizationImages, 1);
   const manifest = [...entries].find(([name]) => name.endsWith('.txt'))[1].toString();
@@ -225,11 +235,15 @@ async function backgroundScenario(original) {
   states.push(await app.message('stopScan'));
   states.push(await app.message('getState'));
   states.push(await app.message('unsupported-fixture-message'));
-  return { states, commands: app.commands, intervals: [...app.clock.intervals.values()].map(({ delay }) => delay) };
+  return { states, commands: app.commands, fetches: app.fetches, intervals: [...app.clock.intervals.values()].map(({ delay }) => delay) };
 }
 
 function expectedContextAwareResponse(response) {
   const expected = clone(response);
+  for (const image of expected.state?.images || []) {
+    if (image.bodyComparison?.mode === 'cdp-no-credentials') image.bodyComparison.mode = 'fetch-omit-cdp';
+    if (image.bodyComparison?.status === 'same') image.detectedMimeType = 'image/jpeg';
+  }
   const scriptTree = expected.state && expected.state.scriptTree;
   if (scriptTree) {
     for (const group of [...scriptTree.groups, ...scriptTree.thirdPartyGroups]) {
@@ -270,11 +284,43 @@ function expectedContextAwareResponse(response) {
   return expected;
 }
 
-test('background preserves capture and findings while replacing CDP resource loads with fetch', async () => {
+test('background preserves tab capture and findings while loading resources through the extension worker', async () => {
   const before = await backgroundScenario(true);
   const after = await backgroundScenario(false);
-  assert.deepEqual(after, { ...before, commands: before.commands.filter(({ method }) => method !== 'Network.loadNetworkResource'), states: before.states.map(expectedContextAwareResponse) });
-  assert.ok(!after.commands.some(({ method }) => method === 'Network.loadNetworkResource'));
+  assert.deepEqual(after.commands.filter(({ method }) => method.startsWith('Fetch.')), [], 'Obserwacja nie może wstrzymywać ani kontynuować żądań strony');
+  const bufferLimits = { maxTotalBufferSize: 50 * 1024 * 1024, maxResourceBufferSize: 25 * 1024 * 1024 };
+  assert.deepEqual(after.commands.filter(({ target, method }) => target.tabId === 42 && method === 'Network.enable').map(({ params }) => params), [bufferLimits]);
+  assert.deepEqual(after.commands.filter(({ target, method }) => target.tabId === 42 && method === 'Network.configureDurableMessages').map(({ target, params }) => ({ target, params })), [
+    { target: { tabId: 42 }, params: bufferLimits }
+  ]);
+  assert.deepEqual(after.commands.filter(({ method }) => method === 'Debugger.setSkipAllPauses').map(({ target, params }) => ({ target, params })), [
+    { target: { tabId: 42 }, params: { skip: true } }
+  ]);
+  assert.deepEqual(after.commands.filter(({ method }) => method === 'Debugger.setBreakpointsActive').map(({ target, params }) => ({ target, params })), [
+    { target: { tabId: 42 }, params: { active: false } }
+  ]);
+  const enableDebuggerIndex = after.commands.findIndex(({ method }) => method === 'Debugger.enable');
+  assert.equal(after.commands[enableDebuggerIndex + 2].method, 'Debugger.setBreakpointsActive', 'Wyłącz breakpointy przed przeładowaniem, aby debugger; strony i ramek nie zatrzymywał wykonania');
+  assert.equal(after.commands[enableDebuggerIndex + 1].method, 'Debugger.setSkipAllPauses', 'Wyłącz pauzy bezpośrednio po włączeniu debuggera, przed przeładowaniem strony');
+  // Normalizuj wyłącznie nowe parametry bufora i polecenia pasywnej obserwacji.
+  const originalCaptureCommands = after.commands
+    .filter(({ target, method }) => target.tabId !== undefined && !['Network.streamResourceContent', 'Network.configureDurableMessages', 'Debugger.setSkipAllPauses', 'Debugger.setBreakpointsActive'].includes(method))
+    .map((command) => command.method === 'Network.enable' ? { ...command, params: {} } : command);
+  assert.deepEqual({ ...after, commands: originalCaptureCommands }, {
+    ...before,
+    fetches: after.fetches,
+    commands: before.commands.filter(({ method }) => method !== 'Network.loadNetworkResource'),
+    states: before.states.map(expectedContextAwareResponse)
+  });
+  assert.equal(after.commands.filter(({ method }) => method === 'Network.loadNetworkResource').length, 0);
+  assert.equal(after.fetches.length, 2, 'Sprawdzamy zdjęcie i robots.txt');
+  assert.deepEqual(after.fetches.map(({ url }) => url).sort(), ['https://cdn.example.net/photo.jpg', 'https://cdn.example.net/robots.txt']);
+  for (const { options } of after.fetches) {
+    assert.deepEqual(options, { credentials: 'omit', mode: 'no-cors', cache: 'no-store', redirect: 'follow' });
+  }
+  const anonymousBodies = after.commands.filter(({ target, method }) => target?.targetId && method === 'Network.getResponseBody');
+  assert.equal(anonymousBodies.length, 2);
+  assert.ok(anonymousBodies.every(({ target }) => target.targetId === 'extension-worker'));
   const result = after.states[2].state;
   assert.equal(result.images.length, 1);
   assert.equal(result.images[0].bodyComparison.exactMatch, true);
@@ -294,6 +340,7 @@ test('background preserves attach failure, unexpected detach and closed tab beha
     before.removeTab();
     after.removeTab();
     assert.deepEqual(await after.message('getState'), expectedContextAwareResponse(await before.message('getState')));
+    assert.deepEqual(after.commands.filter(({ method }) => method.startsWith('Fetch.')), []);
   }
 });
 
@@ -336,6 +383,10 @@ async function reportArtifacts(original, evidenceOverride, itemsOverride) {
 
 function assertUpdatedContextEvidence(actual, expected) {
   const projected = clone(actual);
+  assert.equal(projected.methodology.imageAccess,
+    'Original Network response body is compared byte-for-byte by SHA-256 and length with a fetch from the extension background service worker using credentials=omit, cache=no-store and mode=no-cors. CDP passively reads the full response headers and complete body, including opaque responses. Cookies and automatic HTTP authentication are excluded even with activeTab or host access; failed or incomplete responses remain unverified. Both HTTP statuses must be 2xx. Returning the same image without an active user session is classified as incorrect user authorization under CWE-863; a URL token may be validated, but access is not bound to a verified user identity and entitlement.'
+  );
+  projected.methodology.imageAccess = expected.methodology.imageAccess;
   assert.match(projected.methodology.passwordAccess, /Potential access is tied to execution contexts/);
   assert.match(projected.methodology.passwordAccess, /Isolated contexts are excluded/);
   assert.match(projected.methodology.passwordAccess, /reported as unknown/);
@@ -366,9 +417,16 @@ test('report retains evidence and encoding with corrected context explanations',
   const before = await reportArtifacts(true);
   const after = await reportArtifacts(false);
   assertUpdatedContextEvidence(JSON.parse(after.evidence), JSON.parse(before.evidence));
-  // Zmieniono tytuł sekcji oraz dodano dokładnie dwa wiersze wyjaśnienia. Pozostała treść jest identyczna.
+  // Zmieniono tytuł, dwa wiersze objaśnień kontekstu i opis pobrania przez worker. Pozostała treść jest identyczna.
   const originalRendering = await reportArtifacts(true, after.evidence);
   const expectedItems = originalRendering.items.flatMap((item) => {
+    if (item.text === '2. Body zdjęcia z sesji jest porównywane z żądaniem CDP includeCredentials=false. Wynik wymaga statusów 2xx,') {
+      return [{ ...item, text: '2. Body zdjęcia z sesji jest porównywane z fetch własnego workera z credentials=omit i cache=no-store. CDP' }];
+    }
+    if (item.text === 'identycznej długości i identycznego SHA-256.') {
+      return [{ ...item, text: 'pasywnie odczytuje pełne nagłówki i kompletne body. Wynik wymaga statusów 2xx, identycznej długości i' },
+        { ...item, text: 'identycznego SHA-256.' }];
+    }
     if (item.text === '3. Domeny zewnętrzne z dostępem do strony - CWE-830 / CWE-942') {
       return [{ ...item, text: '3. Domeny zewnętrzne na stronie i w ramkach - CWE-830 / CWE-942' }];
     }
@@ -433,4 +491,70 @@ test('PDF and ZIP buttons preserve exported files and active-scan confirmation',
     assert.deepEqual(after.messages, before.messages);
     assert.deepEqual(after.snapshot(), expectedFrameAwarePopupSnapshot(before.snapshot()));
   }
+});
+
+
+test('żądania są obsługiwane synchronicznie, a bajty odpowiedzi zbierane podczas oczekiwania na CDP', async () => {
+  const commands = [];
+  const streams = new Map();
+  const { context } = createContext({ chrome: {
+    runtime: { lastError: null },
+    debugger: { sendCommand(target, method, params, callback) {
+      commands.push({ target, method, params });
+      if (method === 'Network.streamResourceContent') {
+        streams.set(params.requestId, callback);
+        return;
+      }
+      throw new Error('Nieoczekiwane polecenie: ' + method);
+    } }
+  } });
+  const loader = createModuleLoader(context);
+  const load = (file) => loader.load(path.join(projectRoot, 'src', file));
+  const { createScanStateStore } = await load('business/scanning/scan-state.js');
+  const { createImageRecorder } = await load('business/scanning/image-records.js');
+  const { createNetworkObservationHandlers } = await load('technical/background/network-events.js');
+  const { readCapturedImageBody } = await load('technical/background/resource-reader.js');
+  const state = createScanStateStore({ stopPasswordInputPolling() {} }).ensureState(42);
+  Object.assign(state, { attached: true, scanning: true });
+  const completed = [];
+  const network = createNetworkObservationHandlers({
+    ...createImageRecorder({ clock: { nowIso: () => '2026-11-02T12:00:00.000Z' }, scheduleRobotsCheckForImage() {} }),
+    mergeScriptRequestMetadata(_state, _id, metadata) { return metadata; },
+    addBlockedThirdPartyScript() {},
+    enqueueImageBodyComparison(_state, requestId, url, encodedDataLength, metadata) {
+      completed.push({ requestId, url, encodedDataLength, metadata: clone(metadata) });
+    }
+  });
+  const bytes = Uint8Array.of(0xff, 0xd8, 0xff, 0xe0, 0, 16, 74, 70, 73, 70, 0, 0xff, 0x80);
+  for (const requestId of ['first', 'second']) {
+    const url = 'https://example.test/download/' + requestId;
+    const result = network.handleRequestWillBeSent(state, { requestId, type: 'Fetch', request: { url } });
+    assert.equal(result, undefined, 'Handler nie zwraca obietnicy oczekującej na gotowość strumienia');
+    assert.equal(state.imageRequests.get(requestId).url, url, 'Metadane zapisano przed odpowiedzią CDP i bez uruchamiania timerów');
+    network.handleResponseReceived(state, { requestId, type: 'Fetch', response: {
+      url, status: 200, mimeType: 'text/plain', headers: { 'content-type': 'text/plain' }
+    } });
+    for (const chunk of [bytes.subarray(0, 5), bytes.subarray(5)]) {
+      network.handleDataReceived(state, { requestId, data: Buffer.from(chunk).toString('base64'), dataLength: chunk.length });
+    }
+    network.handleLoadingFinished(state, { requestId, encodedDataLength: bytes.length });
+  }
+  assert.deepEqual([...streams.keys()], ['first', 'second'], 'Drugie żądanie nie czeka na callback pierwszego');
+  assert.deepEqual(completed.map(({ requestId, metadata }) => [requestId, metadata.status, metadata.mimeType]), [
+    ['first', 200, 'text/plain'], ['second', 200, 'text/plain']
+  ]);
+  const bodies = ['first', 'second'].map((requestId) => readCapturedImageBody(42, requestId));
+  let resolved = false;
+  void bodies[0].then(() => { resolved = true; });
+  await new Promise(setImmediate);
+  assert.equal(resolved, false, 'Callback CDP pozostaje oczekujący; nie uruchamiano 15-sekundowego timeoutu');
+  // Bajty dataReceived dotarły podczas oczekiwania na callback startu strumienia.
+  for (const reply of streams.values()) reply({ bufferedData: '' });
+  for (const body of await Promise.all(bodies)) {
+    assert.deepEqual(body.bytes, bytes);
+    assert.equal(body.byteLength, bytes.length);
+    assert.notEqual(body.truncated, true);
+  }
+  assert.deepEqual(commands.map(({ method }) => method), ['Network.streamResourceContent', 'Network.streamResourceContent']);
+  assert.deepEqual(commands.filter(({ method }) => method.startsWith('Fetch.')), []);
 });

@@ -6,11 +6,17 @@
 import { sendDebuggerCommand } from './chrome-api.js';
 import { PASSWORD_ACCESS_BINDING } from './protocol.js';
 import { PASSWORD_ACCESS_MONITOR_SOURCE } from './password-monitor.js';
+import { enableResponseBodyObservation } from './response-body-observation.js';
 
 /** @type {ScanBrowser} */
 export const scanBrowser = {
-  enableNetwork: (tabId) => sendDebuggerCommand(tabId, 'Network.enable'),
-  enableScriptCapture: (tabId) => sendDebuggerCommand(tabId, 'Debugger.enable'),
+  enableNetwork: enableResponseBodyObservation,
+  enableScriptCapture: async (tabId) => {
+    // Obserwuj skrypty bez zatrzymywania strony na instrukcjach debugger i breakpointach.
+    await sendDebuggerCommand(tabId, 'Debugger.enable');
+    await sendDebuggerCommand(tabId, 'Debugger.setSkipAllPauses', { skip: true });
+    return sendDebuggerCommand(tabId, 'Debugger.setBreakpointsActive', { active: false });
+  },
   enableRuntime: (tabId) => sendDebuggerCommand(tabId, 'Runtime.enable'),
   enablePageEvents: (tabId) => sendDebuggerCommand(tabId, 'Page.enable'),
   installPasswordBinding: (tabId) => sendDebuggerCommand(tabId, 'Runtime.addBinding', { name: PASSWORD_ACCESS_BINDING }),

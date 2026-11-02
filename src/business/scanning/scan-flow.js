@@ -27,6 +27,7 @@
 
 import { PASSWORD_INPUT_POLL_INTERVAL_MS } from './config.js';
 import { serializeState } from './state-snapshot.js';
+import { resetImageComparisonQueue } from './scan-state.js';
 
 /**
  * @param {ScanFlowPorts} ports
@@ -138,6 +139,7 @@ export function createScanFlow({
    * @param {unknown} error
    */
   async function recoverFailedStart(state, error) {
+    resetImageComparisonQueue(state);
     state.scanning = false;
     state.status = 'error';
     state.statusMessage = /** @type {Error} */ (error).message;
@@ -180,6 +182,7 @@ export function createScanFlow({
   async function stopScan() {
     const tab = await getActiveTab();
     const state = findAttachedState(tab.id) || ensureState(tab.id);
+    resetImageComparisonQueue(state);
 
     if (!state.attached) {
       stopPasswordInputPolling(state);

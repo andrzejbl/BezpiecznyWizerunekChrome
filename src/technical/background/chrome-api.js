@@ -15,12 +15,12 @@ function chromeError(messagePrefix) {
 }
 
 /**
- * @param {number} tabId
+ * @param {number|chrome.debugger.Debuggee} target
  * @returns {Promise<void>}
  */
-export function attachDebugger(tabId) {
+export function attachDebugger(target) {
   return new Promise((resolve, reject) => {
-    chrome.debugger.attach({ tabId }, DEBUGGER_PROTOCOL_VERSION, () => {
+    chrome.debugger.attach(typeof target === 'number' ? { tabId: target } : target, DEBUGGER_PROTOCOL_VERSION, () => {
       const error = chromeError('Could not attach debugger');
       if (error) {
         reject(error);
@@ -33,12 +33,12 @@ export function attachDebugger(tabId) {
 }
 
 /**
- * @param {number} tabId
+ * @param {number|chrome.debugger.Debuggee} target
  * @returns {Promise<void>}
  */
-export function detachDebugger(tabId) {
+export function detachDebugger(target) {
   return new Promise((resolve, reject) => {
-    chrome.debugger.detach({ tabId }, () => {
+    chrome.debugger.detach(typeof target === 'number' ? { tabId: target } : target, () => {
       const error = chromeError('Could not detach debugger');
       if (error) {
         reject(error);
@@ -54,20 +54,20 @@ export function detachDebugger(tabId) {
 /**
  * @template {object} [R=object]
  * @template [T=R]
- * @param {number} tabId
+ * @param {number|chrome.debugger.Debuggee} target
  * @param {string} method
  * @param {Record<string, unknown>} [params]
  * @param {(result:R)=>T} [readResult]
  * @returns {Promise<T>}
  */
 export function sendDebuggerCommand(
-  tabId,
+  target,
   method,
   params = {},
   readResult = (result) => /** @type {R & T} */ (result)
 ) {
   return new Promise((resolve, reject) => {
-    chrome.debugger.sendCommand({ tabId }, method, params, (result) => {
+    chrome.debugger.sendCommand(typeof target === 'number' ? { tabId: target } : target, method, params, (result) => {
       const error = chromeError(`CDP command failed (${method})`);
       if (error) {
         reject(error);

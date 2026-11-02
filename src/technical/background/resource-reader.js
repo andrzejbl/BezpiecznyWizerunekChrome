@@ -5,18 +5,57 @@
 
 // Przekształcaj zasoby CDP na granicy przesyłania danych. Scenariusze biznesowe nie interpretują uchwytu treści.
 import { sendDebuggerCommand } from './chrome-api.js';
-import { bytesToBase64, decodeCdpBodyToBytes, readCdpStream, readCdpStreamBytes } from './cdp-streams.js';
+import { decodeCdpBodyToBytes, readCdpStream, readCdpStreamBytes } from './cdp-streams.js';
 import { makeImagePreviewDataUrl } from './image-previews.js';
+import { loadBackgroundResource } from './background-resource-loader.js';
+import { normalizeHeaders } from '../../business/scanning/headers.js';
+import { IMAGE_BODY_COMPARE_MAX_BYTES } from '../../business/scanning/config.js';
+import { takeResponseBodyCapture } from './response-body-capture.js';
+
+/** Policz UTF-8 bez tworzenia drugiego dużego bufora. @param {string} text */
+function utf8ByteLength(text) {
+  let length = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    const code = text.charCodeAt(index);
+    if (code < 0x80) length += 1;
+    else if (code < 0x800) length += 2;
+    else if (code >= 0xd800 && code <= 0xdbff && index + 1 < text.length &&
+      text.charCodeAt(index + 1) >= 0xdc00 && text.charCodeAt(index + 1) <= 0xdfff) {
+      length += 4;
+      index += 1;
+    } else length += 3;
+  }
+  return length;
+}
+
+/** @param {{bytes:Uint8Array<ArrayBuffer>,byteLength:number,truncated?:boolean}} capture @returns {CapturedImageBody} */
+function capturedBody(capture) {
+  const { bytes, byteLength, truncated } = capture;
+  return {
+    bytes, byteLength, truncated,
+    createPreview: (image) => truncated ? '' : makeImagePreviewDataUrl(image, { body: '', base64Encoded: false }, bytes)
+  };
+}
 
 /**
  * @param {number} tabId
  * @param {string} requestId
  * @returns {Promise<CapturedImageBody>}
  */
-export function readCapturedImageBody(tabId, requestId) {
+export async function readCapturedImageBody(tabId, requestId) {
+  // Strumień CDP zachowuje bajty także wtedy, gdy serwer błędnie opisuje obraz jako tekst.
+  const capture = await takeResponseBodyCapture(tabId, requestId);
+  if (capture) return capturedBody(capture);
   return sendDebuggerCommand(tabId, 'Network.getResponseBody', { requestId }, /** @param {ResponseBody} body */ (body) => {
-    const bytes = decodeCdpBodyToBytes(body.body || '', body.base64Encoded === true);
-    return { bytes, createPreview: (image) => makeImagePreviewDataUrl(image, body, bytes) };
+    const text = body.body || '';
+    const base64 = body.base64Encoded === true;
+    const byteLength = base64
+      ? Math.floor(text.length * 3 / 4) - (text.endsWith('==') ? 2 : text.endsWith('=') ? 1 : 0)
+      : utf8ByteLength(text);
+    const truncated = byteLength > IMAGE_BODY_COMPARE_MAX_BYTES;
+    // Dla dużej odpowiedzi wystarczy nagłówek do wykrycia formatu; nie dekoduj całego base64.
+    const bytes = decodeCdpBodyToBytes(truncated ? text.slice(0, base64 ? 44 : 32) : text, base64);
+    return capturedBody({ bytes, byteLength, truncated });
   });
 }
 
@@ -24,28 +63,20 @@ export function readCapturedImageBody(tabId, requestId) {
  * @param {number} tabId
  * @param {string} frameId
  * @param {string} url
+ * @param {number} [maxBytes]
  * @returns {Promise<LoadedResource>}
  */
-export async function loadWithoutCredentials(tabId, frameId, url) {
-  // Omit pomija cookies również dla tego samego originu; nie kopiuj nagłówków żądania strony.
-  const response = await fetch(url, {
-    method: 'GET',
-    credentials: 'omit',
-    cache: 'no-store',
-    redirect: 'follow',
-    referrerPolicy: 'no-referrer'
-  });
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  /** @type {Record<string,string>} */
-  const headers = {};
-  response.headers.forEach((value, name) => { headers[name.toLowerCase()] = value; });
+export async function loadWithoutCredentials(tabId, frameId, url, maxBytes = IMAGE_BODY_COMPARE_MAX_BYTES) {
+  // Parametry karty zachowują kontrakt portu; pobranie zawsze należy do własnego workera.
+  const resource = await loadBackgroundResource(url, maxBytes);
+  const headers = normalizeHeaders(resource.headers);
   return {
-    status: response.status,
+    status: typeof resource.httpStatusCode === 'number' ? resource.httpStatusCode : null,
     headers,
-    succeeded: true,
-    error: '',
-    mimeType: response.headers.get('content-type') || '',
-    body: { content: bytesToBase64(bytes), base64Encoded: true }
+    succeeded: resource.success !== false,
+    error: resource.netErrorName || resource.netError || '',
+    mimeType: resource.mimeType || headers['content-type'] || '',
+    body: resource
   };
 }
 

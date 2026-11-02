@@ -15,15 +15,20 @@ export function getImageDimensionKey(image) {
   const comparison = image && image.bodyComparison ? image.bodyComparison : {};
   const previewSignature = image && image.previewDataUrl
     ? `preview:${comparison.originalBodySha256 || image.previewDataUrl.length}`
-    : 'url';
+    : (comparison.originalBodySha256 ? `url:${comparison.originalBodySha256}` : 'url');
 
   return `${image && image.url ? image.url : ''}\u0000${previewSignature}`;
 }
 
 /** @param {import('../../../types/scanning.js').ImageFinding} image */
 export function isExcludedImageFormat(image) {
-  const mimeType = String(image.mimeType || '').toLowerCase();
-  if (mimeType) {
+  if (image.detectedMimeType !== undefined) {
+    return !['image/jpeg', 'image/png', 'image/webp'].includes(image.detectedMimeType);
+  }
+  // Starsze wyniki bez rozpoznania bajtów zachowują dotychczasowe reguły odczytu.
+  const mimeType = String(image.mimeType || '').split(';', 1)[0].trim().toLowerCase();
+  // Ogólny typ binarny nie określa formatu; w takim przypadku użyj rozszerzenia URL.
+  if (mimeType && mimeType !== 'application/octet-stream' && mimeType !== 'binary/octet-stream') {
     return mimeType !== 'image/jpeg' && mimeType !== 'image/jpg' && mimeType !== 'image/pjpeg' && mimeType !== 'image/png' && mimeType !== 'image/webp';
   }
 

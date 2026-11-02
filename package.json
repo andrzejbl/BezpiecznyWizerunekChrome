@@ -2,7 +2,10 @@
   "name": "bezpieczny-wizerunek",
   "private": true,
   "scripts": {
-    "test": "node --experimental-vm-modules --test tests/architecture.test.cjs tests/business-flows.test.cjs tests/image-context.test.cjs tests/password-context.test.cjs tests/regression.test.cjs tests/cookieless-fetch.test.cjs",
+    "test": "node --experimental-vm-modules --test tests/architecture.test.cjs tests/business-flows.test.cjs tests/image-context.test.cjs tests/password-context.test.cjs tests/regression.test.cjs tests/background-cdp.test.cjs tests/image-signatures.test.cjs tests/image-signatures-flow.test.cjs tests/response-body-capture.test.cjs tests/response-body-observation.test.cjs",
+    "test:integration": "node tests/background-cdp-integration.cjs",
+    "test:reload": "node tests/scan-reload-integration.cjs",
+    "test:reload:delayed": "node tests/scan-reload-integration.cjs --drop-stream-reply",
     "test:visual": "node tests/visual-regression.cjs",
     "typecheck": "tsc --project jsconfig.json"
   },

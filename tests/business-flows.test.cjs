@@ -102,7 +102,7 @@ test('niepoprawny CORS nie zwiększa liczby domen z dostępem do zdjęć', async
   assert.equal(tree.thirdPartyGroups[0].corsPixelAccess.possible, false);
 });
 
-test('PNG i WebP są rozpoznawane po MIME lub rozszerzeniu', async () => {
+test('format zdjęcia uwzględnia znormalizowany MIME i rozszerzenie dla ogólnego typu binarnego', async () => {
   const { isExcludedImageFormat } = await loadBusiness('popup/image-rules.js');
   const cases = [
     ['image/png', 'https://example.test/download?id=1', false],
@@ -114,18 +114,36 @@ test('PNG i WebP są rozpoznawane po MIME lub rozszerzeniu', async () => {
     ['image/pjpeg', 'https://example.test/photo.jpg', false],
     ['', 'https://example.test/photo.jpeg', false],
     ['image/webp', 'https://example.test/photo.png', false],
-    ['application/octet-stream', 'https://example.test/photo.png', true],
+    [' image/png ; charset=utf-8 ', 'https://example.test/download', false],
+    [' IMAGE/WEBP; charset=binary', 'https://example.test/download', false],
+    ['   ', 'https://example.test/photo.jpg', false],
+    ['application/octet-stream', 'https://example.test/photo.png', false],
+    ['application/octet-stream', 'https://example.test/photo.jpg?token=example#preview', false],
+    ['application/octet-stream', 'https://example.test/photo.jpeg', false],
+    [' APPLICATION/OCTET-STREAM; charset=binary ', 'https://example.test/photo.WEBP', false],
+    ['binary/octet-stream', 'https://example.test/photo.JPG', false],
+    ['application/octet-stream', 'https://example.test/download?filename=photo.jpg', true],
+    ['application/octet-stream', 'https://example.test/photo.jpg.exe', true],
+    ['application/octet-stream', 'https://example.test/photo.gif', true],
+    ['image/gif', 'https://example.test/photo.jpg', true],
+    ['image/svg+xml; charset=utf-8', 'https://example.test/photo.png', true],
+    [' text/html ; charset=utf-8 ', 'https://example.test/photo.jpg', true],
+    ['application/pdf', 'https://example.test/photo.jpg', true],
     ['', 'https://example.test/photo.webp', false],
     ['', 'https://example.test/photo.png.exe', true],
     ['', 'https://example.test/download?filename=photo.png', true]
   ];
 
   for (const [mimeType, url, excluded] of cases) {
-    assert.equal(isExcludedImageFormat({ ...clone(fixture.image), mimeType, url }), excluded, mimeType + ' ' + url);
+    const image = { ...clone(fixture.image), mimeType, url };
+    const original = clone(image);
+    assert.equal(isExcludedImageFormat(image), excluded, mimeType + ' ' + url);
+    assert.deepEqual(image, original, 'Kwalifikacja nie zmienia MIME ani dowodów');
   }
 });
 
-test('PNG nadal wymaga zgodnej treści, poprawnych statusów HTTP i zaakceptowanego pomiaru', async () => {
+for (const [extension, mimeType] of [['png', 'image/png'], ['jpg', 'application/octet-stream']])
+test(extension.toUpperCase() + ' nadal wymaga zgodnej treści, poprawnych statusów HTTP i zaakceptowanego pomiaru', async () => {
   const { getFilteredImageRows } = await loadBusiness('popup/image-rules.js');
   const { assessImageBodyComparison } = await loadBusiness('scanning/image-comparison-rules.js');
   const successfulComparison = {
@@ -147,8 +165,8 @@ test('PNG nadal wymaga zgodnej treści, poprawnych statusów HTTP i zaakceptowan
   const images = cases.map(([name, comparison, state, passes]) => {
     const image = {
       ...clone(fixture.image),
-      url: 'https://example.test/' + name + '.png',
-      mimeType: 'image/png',
+      url: 'https://example.test/' + name + '.' + extension,
+      mimeType,
       bodyComparison: assessImageBodyComparison({ ...successfulComparison, ...comparison })
     };
     dimensionsByUrl.set(image.url, { state, passes });
@@ -157,7 +175,7 @@ test('PNG nadal wymaga zgodnej treści, poprawnych statusów HTTP i zaakceptowan
 
   const result = getFilteredImageRows(images, (image) => dimensionsByUrl.get(image.url));
 
-  assert.deepEqual(Array.from(result.rows, ({ image }) => image.url), ['https://example.test/accepted.png']);
+  assert.deepEqual(Array.from(result.rows, ({ image }) => image.url), ['https://example.test/accepted.' + extension]);
   assert.equal(result.pendingCount, 1);
 });
 

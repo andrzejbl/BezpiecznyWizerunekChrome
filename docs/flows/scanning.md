@@ -18,7 +18,8 @@ CDP, czyli Chrome DevTools Protocol, pozwala wysyłać polecenia do przeglądark
 | --- | --- |
 | `tabId` | Wybiera kartę oraz jej `ScanState` w mapie `tabStates`. |
 | `requestId`, np. `R1` | Łączy zdarzenia jednego żądania i pozwala odczytać treść zarejestrowanej odpowiedzi. |
-| `mainFrameId` | Wskazuje główną ramę strony przy osobnym pobraniu zasobu. Uzupełnia go `handleFrameNavigated()` w [page-observations.js](../../src/business/scanning/page-observations.js). |
+| `mainFrameId` | Identyfikuje główną ramę obserwowanej strony; pozostaje w kontrakcie portu, ale anonimowe pobranie nie korzysta z jej kontekstu. |
+| `targetId` własnego workera | Wybiera target do pasywnej obserwacji własnego `fetch` z `credentials: 'omit'`; CDP odczytuje pełne nagłówki i kompletne body. |
 
 Pełny URL jest osobnym kluczem: według niego skaner grupuje rekordy zdjęć. Kilka żądań tego samego URL może uzupełniać jeden rekord.
 
@@ -33,9 +34,11 @@ flowchart TD
     A[Komunikat startScanWithReload] --> B[Podłącz obserwację i przeładuj stronę]
     B --> C[Zwróć bieżący stan skanu]
     B --> D[Network.requestWillBeSent: R1 i URL]
+    D -.-> P[Pasywnie uruchom odczyt bajtów, bez czekania]
     D --> E[Network.responseReceived: status i nagłówki]
-    E --> F[Network.loadingFinished: pobieranie R1 zakończone]
-    F --> G[Kolejka porównań zdjęć]
+    E --> S[Network.dataReceived: surowe bajty]
+    S --> F[Network.loadingFinished: pobieranie R1 zakończone]
+    F --> G[Kolejka analizy sygnatur każdej odpowiedzi]
     G --> H[Oryginalna treść i pobranie bez danych uwierzytelniających]
     H --> I[Zapis image.bodyComparison]
     I --> J[getState: serializeState i wynik dla okna rozszerzenia]
@@ -45,15 +48,15 @@ flowchart TD
 | --- | --- | --- |
 | Polecenie z okna rozszerzenia | `handlePopupRequest()` w [extension-events.js](../../src/technical/background/extension-events.js) | `startScanWithReload` trafia do scenariusza startu. |
 | Przygotowanie | `startScanWithReload()` w [scan-flow.js](../../src/business/scanning/scan-flow.js) | Resetuje wyniki karty, podłącza debugger, włącza zbieranie zdarzeń i monitor pól hasła, wyłącza pamięć podręczną, zleca przeładowanie strony. Nie czeka na porównania zdjęć. |
-| Początek żądania | `handleRequestWillBeSent()` w [network-events.js](../../src/technical/background/network-events.js) | Zapamiętuje pod `R1` URL i typ zasobu. `addOrUpdateImage()` tworzy rekord, jeśli metadane pozwalają rozpoznać obraz. |
+| Początek żądania | `handleRequestWillBeSent()` w [network-events.js](../../src/technical/background/network-events.js) | Uruchamia pasywny odczyt strumienia bez oczekiwania na callback CDP, a następnie zapamiętuje pod `R1` URL i typ zasobu. `addOrUpdateImage()` tworzy rekord, jeśli metadane pozwalają rozpoznać obraz. |
 | Odpowiedź | `handleResponseReceived()` w [network-events.js](../../src/technical/background/network-events.js) | Uzupełnia metadane R1 o status HTTP, MIME i nagłówki, a następnie uzupełnia lub tworzy rekord zdjęcia. To jeszcze nie sygnał zakończenia pobierania treści odpowiedzi. |
 | Koniec pobierania | `handleLoadingFinished()` w [network-events.js](../../src/technical/background/network-events.js) | Dodaje długość, zleca porównanie z URL odtworzonym ze scalonych metadanych, usuwa R1 z tymczasowych map żądań. |
-| Kolejka | `enqueueImageBodyComparison()` i `runImageBodyCompareQueue()` w [image-comparison-flow.js](../../src/business/scanning/image-comparison-flow.js) | Sprawdzają warunki dopuszczenia, dodają `{ requestId: "R1", url }` i uruchamiają pracę, gdy jest miejsce. Limit to obecnie 2 aktywne porównania na kartę, zgodnie z [config.js](../../src/business/scanning/config.js). |
-| Treści dwóch odpowiedzi | `compareImageBodyWithoutCredentials()` w [image-comparison-flow.js](../../src/business/scanning/image-comparison-flow.js) | Czyta treść odpowiedzi R1, oblicza SHA-256, pobiera ten sam URL bez danych uwierzytelniających i z pominięciem pamięci podręcznej, czyta treść drugiej odpowiedzi oraz oblicza jego SHA-256. Implementacje pobrań są w [resource-reader.js](../../src/technical/background/resource-reader.js). |
+| Kolejka | `enqueueImageBodyComparison()` i `runQueue()` w [image-comparison-flow.js](../../src/business/scanning/image-comparison-flow.js) | Każdy zakończony request dodaje `{ requestId: "R1", url, metadata }`, także bez wskazówek obrazu w URL/MIME. Metadane są osobną kopią. Limit to 2 aktywne zadania na kartę. |
+| Rozpoznanie i porównanie | `compareResponse()` w [image-comparison-flow.js](../../src/business/scanning/image-comparison-flow.js) | Odczytuje zachowane bajty R1 i rozpoznaje sygnaturę JPEG/PNG/WebP. Dopiero rozpoznany, kompletny obraz HTTP(S) jest hashowany i porównywany z pobraniem bez sesji. Odczyt realizuje [resource-reader.js](../../src/technical/background/resource-reader.js). |
 | Ocena i zapis | `assessImageBodyComparison()` w [image-comparison-rules.js](../../src/business/scanning/image-comparison-rules.js), następnie `setImageBodyComparison()` w [image-comparison-flow.js](../../src/business/scanning/image-comparison-flow.js) | Zgodność długości i SHA-256 daje `exactMatch`. Dopiero zgodność i dwa statusy HTTP 2xx dają `improperAuthorization`. Wynik trafia do istniejącego obiektu zdjęcia. |
 | Odczyt wyniku | `getActiveTabState()` w [scan-flow.js](../../src/business/scanning/scan-flow.js) i `serializeState()` w [state-snapshot.js](../../src/business/scanning/state-snapshot.js) | `getState` odczytuje aktywną kartę i przygotowuje dane dla okna rozszerzenia. Przy podłączonym skanie może też odświeżyć metadane pól hasła i zlecić kontrole robots.txt. Nie czeka na ukończenie kolejki zdjęć. |
 
-`handleDebuggerEvent()` w [extension-events.js](../../src/technical/background/extension-events.js) jest miejscem przekazującym nazwy zdarzeń CDP do powyższych funkcji obsługi. Obsługuje zdarzenie tylko wtedy, gdy znajdzie stan karty z `attached === true`.
+`handleDebuggerEvent()` w [extension-events.js](../../src/technical/background/extension-events.js) przekazuje zdarzenia CDP do powyższych funkcji, gdy stan ma `attached === true`. [response-body-observation.js](../../src/technical/background/response-body-observation.js) przed przeładowaniem włącza zwykłą obserwację Network i natywny kolektor treści odpowiedzi. [response-body-capture.js](../../src/technical/background/response-body-capture.js) od początku każdego żądania asynchronicznie zbiera bajty strumienia i kontroluje limity. Nie ma komend `Fetch` ani wstrzymywania ruchu. Gotowość odczytu i analiza wpływają tylko na czas pojawienia się wyników, a nie na ładowanie strony.
 
 ## Kto zmienia dane
 
@@ -66,7 +69,7 @@ Magazyn [scan-state.js](../../src/business/scanning/scan-state.js) tworzy jeden 
 | `pageUrl`, `mainFrameId`, konteksty | Funkcje w [page-observations.js](../../src/business/scanning/page-observations.js) | Adres i informacje o stronie/ramach uzyskiwane z przeglądarki. |
 | `imageRequests` | `mergeImageRequestMetadata()` w [image-records.js](../../src/business/scanning/image-records.js); usuwanie w funkcjach obsługi zakończenia lub błędu pobierania w [network-events.js](../../src/technical/background/network-events.js) | Tymczasowa mapa `requestId → częściowe metadane`. Są w niej również żądania, które nie zostaną uznane za zdjęcia. |
 | `images`, `imagesByUrl` | `addOrUpdateImage()` w [image-records.js](../../src/business/scanning/image-records.js) | Tablica zachowuje kolejność dodania, mapa wyszukuje po pełnym URL. **Obie zawierają referencje do tych samych rekordów.** |
-| `imageBodyCompareQueue`, `imageBodyCompareQueuedUrls`, `imageBodyCompareActiveCount` | Funkcje kolejki w [image-comparison-flow.js](../../src/business/scanning/image-comparison-flow.js); reset i funkcje obsługi cyklu życia | Oczekujące zadania, URL-e oczekujących zadań oraz licznik służący do limitowania rozpoczętej pracy. URL znika ze zbioru, gdy zadanie zaczyna się wykonywać. |
+| `imageBodyCompareQueue`, `imageBodyCompareSeenRequestIds`, `imageBodyCompareLatestByUrl`, `imageBodyCompareActiveCount` | Funkcje kolejki w [image-comparison-flow.js](../../src/business/scanning/image-comparison-flow.js); reset i cykl życia | Kolejka zadań, zbiór już zleconych requestId, ostatni requestId dla URL i licznik aktywnej pracy. Powtórzony URL nie pomija odczytu nowej odpowiedzi. |
 | `image.bodyComparison`, `image.previewDataUrl` | Funkcje w [image-comparison-flow.js](../../src/business/scanning/image-comparison-flow.js) | Porównanie aktualizuje istniejący rekord zdjęcia. Podgląd powstaje z oryginalnej treści odpowiedzi przy dodatnim `improperAuthorization`, jeśli adapter potrafi go utworzyć. |
 | Pola wyniku, np. `improperImageAuthorization`, `cache`, `indexing` | `serializeImage()` w [state-snapshot.js](../../src/business/scanning/state-snapshot.js) | Pola wyliczane podczas przygotowywania wiadomości. `serializeState()` nie wysyła wewnętrznych map ani kolejki. |
 
@@ -136,23 +139,23 @@ Wartości `image.bodyComparison.status` z [image-comparison-flow.js](../../src/b
 | `checking` | Rozpoczęto porównywanie treści odpowiedzi. |
 | `same` | Długości i SHA-256 są zgodne. `improperAuthorization` dodatkowo wymaga obu statusów HTTP 2xx. |
 | `different` | Długości lub SHA-256 są różne. |
-| `skipped` | Kontrola długości przed kolejką lub po odczycie gotowej treści odpowiedzi wykryła przekroczenie limitu. |
-| `error` | Np. brak głównej ramy, błąd polecenia CDP, nieudane pobranie bez danych uwierzytelniających albo wyjątek podczas odczytu. Przekroczenie limitu w trakcie czytania strumienia również rzuca wyjątek i trafia tutaj. |
+| `skipped` | Brak obsługiwanej sygnatury, niekompletna treść, przekroczony limit lub URL inny niż HTTP(S). |
+| `error` | Np. błąd polecenia CDP, nieudane pobranie bez sesji albo wyjątek podczas odczytu. |
 
-Limit porównywanej treści odpowiedzi wynosi obecnie `25 * 1024 * 1024` bajtów. Nie każdy zasób otrzymuje status `skipped`: brak URL, nieobsługiwany protokół, brak rekordu zdjęcia lub brak podłączenia mogą zakończyć `enqueueImageBodyComparison()` bez zapisu wyniku. Funkcja `isRobotsCheckableUrl()` jest tu współdzielonym sprawdzeniem URL HTTP/HTTPS; jej nazwa nie oznacza, że wynik robots.txt decyduje o porównaniu treści odpowiedzi.
+Limit porównania wynosi 25 MiB, a przechwytywanie ma wspólny budżet 50 MiB. Powyżej limitu zachowuje prefiks do wykrycia formatu i nie hashuje niepełnej treści. Zwykła odpowiedź nieobrazowa nie tworzy rekordu zdjęcia. `detectedMimeType` zawiera wynik rozpoznania bajtów; oryginalny MIME i nagłówki pozostają w dowodach. `isRobotsCheckableUrl()` jest współdzielonym sprawdzeniem HTTP(S); wynik robots.txt nie decyduje o porównaniu treści.
 
 ## Stop, ponowny start i odłączenie
 
 | Sytuacja | Zachowanie obecnego kodu |
 | --- | --- |
 | `stopScan()` | Zatrzymuje cykliczne sprawdzanie pól hasła i zleca odłączenie. Zachowuje dotychczasowe rekordy. Wybiera podłączony stan aktywnej karty, a jeśli takiego nie ma, szuka podłączonego stanu innej karty. |
-| `handleDebuggerDetached()` | Ustawia `attached` i `scanning` na `false`, usuwa oczekującą kolejkę i zbiór jej URL-i, zeruje licznik aktywnych porównań, zapisuje czasy i odpowiedni status. Zachowuje zdjęcia i pozostałe wyniki. |
+| `handleDebuggerDetached()` | Ustawia `attached` i `scanning` na `false`, wymienia kolejkę oraz indeksy requestId/URL, zeruje licznik, zapisuje czasy i status. Zachowuje zdjęcia i pozostałe wyniki. |
 | `handleTabRemoved()` | Czyści oczekującą pracę podobnie do odłączenia i wpisuje `closed`. Zachowuje rekord stanu w `tabStates`. |
 | `resetScanData()` przy ponownym starcie | Zatrzymuje cykliczne sprawdzanie, wymienia kolekcje zdjęć, żądań, skryptów, porównań i innych obserwacji oraz zeruje ich pomocnicze dane. Zachowuje obiekt `ScanState`; samo nie odłącza debuggera. Następne etapy startu ustawiają adres, czasy, status i aktywność. |
 
-**Żadna z tych operacji nie czeka na zakończenie wszystkich rozpoczętych porównań ani nie anuluje ich Promise.** Usunięcie oczekującej kolejki nie oznacza wykonania jej zadań. Już rozpoczęta operacja może jeszcze zakończyć się wynikiem lub błędem. Po resecie może nadal posiadać referencję do starego rekordu; obsługa błędu kolejki szuka rekordu po URL w bieżącej mapie. Nie należy zakładać, że reset jest granicą anulowania wszystkich zapisów asynchronicznych.
+Stop i reset unieważniają tożsamość kolejki. Każda rozpoczęta operacja sprawdza ją po `await`, a przed publikacją także ostatni requestId danego URL. Spóźniony wynik, błąd lub `finally` nie zmienia nowego skanu. Rozpoczęte Promise mogą jeszcze się zakończyć, ale ich nieaktualne wyniki są pomijane. Warstwa techniczna czyści bufory oraz anuluje oczekiwanie na odczyt strumieni. Żądania strony są przez cały czas niewstrzymywane.
 
-Kod nie ma statusu porównania `cancelled` ani statusu skanu `completed`. Przy usunięciu kolejki istniejące `bodyComparison.status` nie jest automatycznie zmieniane, więc zachowany rekord może nadal pokazywać `queued` lub `checking`. Szczegóły są w `runImageBodyCompareQueue()` w [image-comparison-flow.js](../../src/business/scanning/image-comparison-flow.js), `stopScan()` w [scan-flow.js](../../src/business/scanning/scan-flow.js) i funkcjach obsługi [scan-lifecycle.js](../../src/business/scanning/scan-lifecycle.js).
+Kod nie ma statusu porównania `cancelled` ani statusu skanu `completed`. Zachowany rekord przerwanego zadania może nadal pokazywać `queued` lub `checking`. Szczegóły są w `runQueue()` w [image-comparison-flow.js](../../src/business/scanning/image-comparison-flow.js), `stopScan()` w [scan-flow.js](../../src/business/scanning/scan-flow.js) i funkcjach [scan-lifecycle.js](../../src/business/scanning/scan-lifecycle.js).
 
 ## Gdzie patrzeć, gdy brak zdjęcia
 
@@ -161,8 +164,8 @@ Sprawdzaj najpierw, na którym etapie znika rekord; brak kafelka w oknie rozszer
 | Co sprawdzić | Miejsce w kodzie |
 | --- | --- |
 | Czy odczytujesz skan właściwej aktywnej karty? Czy stan ma `attached === true` i czy debugger wysyła zdarzenia? | `getActiveTabState()` w [scan-flow.js](../../src/business/scanning/scan-flow.js), `handleDebuggerEvent()` w [extension-events.js](../../src/technical/background/extension-events.js). |
-| Czy request/response R1 zawierały URL i dane pozwalające rozpoznać obraz? Obraz jest rozpoznawany po typie `Image`, MIME `image/…` lub typowym URL. | `handleRequestWillBeSent()` i `handleResponseReceived()` w [network-events.js](../../src/technical/background/network-events.js); `isImageLike()` i `addOrUpdateImage()` w [image-records.js](../../src/business/scanning/image-records.js). |
+| Czy bajty odpowiedzi zawierają obsługiwaną sygnaturę? MIME, typ zasobu i URL mogą utworzyć wstępny rekord, ale nie są wymagane do analizy zakończonego żądania. | [image-signatures.js](../../src/business/scanning/image-signatures.js), [response-body-capture.js](../../src/technical/background/response-body-capture.js) i [image-records.js](../../src/business/scanning/image-records.js). |
 | Czy nadeszło `loadingFinished`, czy zamiast niego `loadingFailed`? Ścieżka błędu nie kolejkuje porównania zdjęcia. | Funkcje obsługi zdarzeń w [network-events.js](../../src/technical/background/network-events.js). |
-| Czy URL jest HTTP/HTTPS, istnieje rekord, limit rozmiaru pozwala na porównanie i jest główna rama? Co zawierają `bodyComparison.status`, `reason` i `error`? | `enqueueImageBodyComparison()` i `compareImageBodyWithoutCredentials()` w [image-comparison-flow.js](../../src/business/scanning/image-comparison-flow.js), [resource-reader.js](../../src/technical/background/resource-reader.js). |
+| Czy URL jest HTTP(S), treść kompletna i w limicie? Co zawierają `bodyComparison.status`, `reason` i `error`? | `enqueueImageBodyComparison()` i `compareResponse()` w [image-comparison-flow.js](../../src/business/scanning/image-comparison-flow.js), [resource-reader.js](../../src/technical/background/resource-reader.js). |
 | Czy porównanie dało `same`, ale `improperAuthorization` jest `false` z powodu statusów HTTP? | `assessImageBodyComparison()` w [image-comparison-rules.js](../../src/business/scanning/image-comparison-rules.js). |
-| Czy rekord jest już w `getState`, ale filtr okna rozszerzenia go nie pokazuje? Okno rozszerzenia wymaga wyniku nieprawidłowej autoryzacji, formatu JPEG/JPG lub PNG i pomiaru z dłuższym bokiem co najmniej 200 px. Warunki są jednakowe dla obu formatów. Pomiar może jeszcze trwać. | `getFilteredImageRows()` w [image-rules.js](../../src/business/popup/image-rules.js) i opis okna rozszerzenia w [przewodniku głównym](README.md). |
+| Czy rekord jest już w `getState`, ale filtr go nie pokazuje? Wymagane są: dodatni wynik porównania bez sesji, JPEG/PNG/WebP rozpoznany z bajtów oraz udany pomiar dłuższego boku co najmniej 200 px. | `getFilteredImageRows()` w [image-rules.js](../../src/business/popup/image-rules.js) i opis okna rozszerzenia w [przewodniku głównym](README.md). |

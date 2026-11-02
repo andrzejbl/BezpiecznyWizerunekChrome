@@ -98,18 +98,24 @@ export async function sha256Hex(bytes) {
 }
 
 /**
- * @param {number} tabId
+ * @param {number|chrome.debugger.Debuggee} target
  * @param {string} streamHandle
  * @param {number} maxBytes
+ * @param {{shouldAbort?:()=>boolean,shouldClose?:()=>boolean}} [controls]
  */
-export async function readCdpStreamBytes(tabId, streamHandle, maxBytes) {
+export async function readCdpStreamBytes(target, streamHandle, maxBytes, controls = {}) {
   /** @type {Uint8Array<ArrayBuffer>[]} */
   const chunks = [];
   let totalLength = 0;
 
   try {
     while (true) {
-      const chunk = /** @type {StreamChunk} */ (await sendDebuggerCommand(tabId, 'IO.read', { handle: streamHandle }));
+      if (controls.shouldAbort?.()) throw new Error('Resource read cancelled.');
+      const chunk = /** @type {StreamChunk} */ (await sendDebuggerCommand(target, 'IO.read', {
+        handle: streamHandle,
+        size: Math.min(65536, maxBytes - totalLength + 1)
+      }));
+      if (controls.shouldAbort?.()) throw new Error('Resource read cancelled.');
       const bytes = decodeCdpBodyToBytes(chunk.data || '', chunk.base64Encoded === true);
 
       if (bytes.length > 0) {
@@ -126,7 +132,9 @@ export async function readCdpStreamBytes(tabId, streamHandle, maxBytes) {
     }
   } finally {
     try {
-      await sendDebuggerCommand(tabId, 'IO.close', { handle: streamHandle });
+      if (controls.shouldClose?.() !== false) {
+        await sendDebuggerCommand(target, 'IO.close', { handle: streamHandle });
+      }
     } catch (error) {
       // Nieudane zamknięcie strumienia nie unieważnia uzyskanego wyniku porównania.
     }

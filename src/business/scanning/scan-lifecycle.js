@@ -10,7 +10,7 @@
  */
 
 // Zdarzenia cyklu życia przeglądarki zatrzymują obserwację i zachowują wcześniej zebrane wyniki.
-
+import { resetImageComparisonQueue } from './scan-state.js';
 
 /**
  * @param {ScanLifecyclePorts} ports
@@ -38,9 +38,7 @@ export function createScanLifecycle({
     state.attached = false;
     state.scanning = false;
     state.robotsChecksInFlight = new Set();
-    state.imageBodyCompareQueue = [];
-    state.imageBodyCompareQueuedUrls = new Set();
-    state.imageBodyCompareActiveCount = 0;
+    resetImageComparisonQueue(state);
     state.debuggerDetachedAt = clock.nowIso();
     state.scanStoppedAt = state.scanStoppedAt || state.debuggerDetachedAt;
     if (state.stopRequested) {
@@ -73,9 +71,7 @@ export function createScanLifecycle({
     state.attached = false;
     state.scanning = false;
     state.robotsChecksInFlight = new Set();
-    state.imageBodyCompareQueue = [];
-    state.imageBodyCompareQueuedUrls = new Set();
-    state.imageBodyCompareActiveCount = 0;
+    resetImageComparisonQueue(state);
     state.debuggerDetachedAt = clock.nowIso();
     state.scanStoppedAt = state.scanStoppedAt || state.debuggerDetachedAt;
     state.status = 'closed';

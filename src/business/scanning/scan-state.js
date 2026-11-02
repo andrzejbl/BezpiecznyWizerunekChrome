@@ -8,6 +8,13 @@
 
 // Jeden skan na kartę. Wyzerowanie skanu zatrzymuje odpytywanie pól hasła przed usunięciem obserwacji.
 
+/** Wymiana kolejki unieważnia także rozpoczęte zadania poprzedniej generacji. @param {ScanState} state */
+export function resetImageComparisonQueue(state) {
+  state.imageBodyCompareQueue = [];
+  state.imageBodyCompareSeenRequestIds = new Set();
+  state.imageBodyCompareLatestByUrl = new Map();
+  state.imageBodyCompareActiveCount = 0;
+}
 
 /**
  * @param {ScanStateStorePorts} ports
@@ -42,7 +49,8 @@ export function createScanStateStore({ stopPasswordInputPolling }) {
       imagesByUrl: new Map(),
       imageRequests: new Map(),
       imageBodyCompareQueue: [],
-      imageBodyCompareQueuedUrls: new Set(),
+      imageBodyCompareSeenRequestIds: new Set(),
+      imageBodyCompareLatestByUrl: new Map(),
       imageBodyCompareActiveCount: 0,
       robotsChecksByOrigin: new Map(),
       robotsChecksInFlight: new Set(),
@@ -90,15 +98,10 @@ export function createScanStateStore({ stopPasswordInputPolling }) {
     state.images = [];
     state.imagesByUrl = new Map();
     state.imageRequests = new Map();
-    state.imageBodyCompareQueue = [];
-    state.imageBodyCompareQueuedUrls = new Set();
-    state.imageBodyCompareActiveCount = 0;
+    resetImageComparisonQueue(state);
     state.robotsChecksByOrigin = new Map();
     state.robotsChecksInFlight = new Set();
     state.mainFrameId = '';
-    state.imageBodyCompareQueue = [];
-    state.imageBodyCompareQueuedUrls = new Set();
-    state.imageBodyCompareActiveCount = 0;
     state.scripts = [];
     state.scriptsById = new Map();
     state.scriptRequests = new Map();

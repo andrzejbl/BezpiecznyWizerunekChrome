@@ -18,6 +18,7 @@ import { scanBrowser } from '../technical/background/scan-browser.js';
 import { clock, scheduler } from '../technical/background/runtime-services.js';
 import { readCapturedImageBody, loadWithoutCredentials, readResourceText, readResourceBytes } from '../technical/background/resource-reader.js';
 import { sha256Hex } from '../technical/background/cdp-streams.js';
+import { clearResponseBodyCaptures } from '../technical/background/response-body-capture.js';
 
 /** Połącz opisane typami porty biznesowe z adapterami Chrome, potem zarejestruj obsługę zdarzeń.
  * @returns {void}
@@ -40,6 +41,7 @@ export function startBackgroundApplication() {
     readCapturedImageBody,
     loadWithoutCredentials,
     readResourceBytes,
+    addOrUpdateImage: images.addOrUpdateImage,
     hashBody: sha256Hex,
     clock
   });
@@ -60,10 +62,16 @@ export function startBackgroundApplication() {
     browser: scanBrowser,
     getActiveTab,
     attachDebugger,
-    detachDebugger,
+    detachDebugger: (tabId) => {
+      clearResponseBodyCaptures(tabId);
+      return detachDebugger(tabId);
+    },
     tabStates: scans.tabStates,
     ensureState: scans.ensureState,
-    resetScanData: scans.resetScanData,
+    resetScanData: (state) => {
+      clearResponseBodyCaptures(state.tabId);
+      scans.resetScanData(state);
+    },
     setPageInfo: page.setPageInfo,
     updatePageInfoFromRuntime: page.updatePageInfoFromRuntime,
     scheduleRobotsChecks: robots.scheduleRobotsChecks,
@@ -89,6 +97,7 @@ export function startBackgroundApplication() {
     handleScriptParsed: scripts.handleScriptParsed,
     handleRequestWillBeSent: network.handleRequestWillBeSent,
     handleResponseReceived: network.handleResponseReceived,
+    handleDataReceived: network.handleDataReceived,
     handleLoadingFinished: network.handleLoadingFinished,
     handleLoadingFailed: network.handleLoadingFailed,
     handleRequestServedFromCache: network.handleRequestServedFromCache,
@@ -97,8 +106,14 @@ export function startBackgroundApplication() {
     startScanWithReload: scan.startScanWithReload,
     stopScan: scan.stopScan,
     getActiveTabState: scan.getActiveTabState,
-    handleDebuggerDetached: lifecycle.handleDebuggerDetached,
-    handleTabRemoved: lifecycle.handleTabRemoved,
+    handleDebuggerDetached: (source, reason) => {
+      if (typeof source.tabId === 'number') clearResponseBodyCaptures(source.tabId);
+      lifecycle.handleDebuggerDetached(source, reason);
+    },
+    handleTabRemoved: (tabId) => {
+      clearResponseBodyCaptures(tabId);
+      lifecycle.handleTabRemoved(tabId);
+    },
     clock
   });
 }

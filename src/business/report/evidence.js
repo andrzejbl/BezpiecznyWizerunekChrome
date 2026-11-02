@@ -81,7 +81,7 @@ export function buildEvidencePayload(reportStats, summary, generatedAt, reportId
     },
     methodology: {
       imageAccess:
-        'Original Network response body is compared byte-for-byte by SHA-256 and length with a CDP Network.loadNetworkResource request using includeCredentials=false and disableCache=true. Both HTTP statuses must be 2xx. Returning the same image without an active user session is classified as incorrect user authorization under CWE-863; a URL token may be validated, but access is not bound to a verified user identity and entitlement.',
+        'Original Network response body is compared byte-for-byte by SHA-256 and length with a fetch from the extension background service worker using credentials=omit, cache=no-store and mode=no-cors. CDP passively reads the full response headers and complete body, including opaque responses. Cookies and automatic HTTP authentication are excluded even with activeTab or host access; failed or incomplete responses remain unverified. Both HTTP statuses must be 2xx. Returning the same image without an active user session is classified as incorrect user authorization under CWE-863; a URL token may be validated, but access is not bound to a verified user identity and entitlement.',
       responseHeaders:
         'Cache-Control, X-Robots-Tag and CORS are evaluated from resource.headers returned by the no-credentials image request.',
       imagePixelAccess:

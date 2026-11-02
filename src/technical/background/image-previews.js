@@ -11,6 +11,10 @@ import { bytesToBase64 } from './cdp-streams.js';
  * @param {ImageRecord} image
  */
 function getImagePreviewMimeType(image) {
+  if (image && image.detectedMimeType !== undefined) {
+    return ['image/jpeg', 'image/png', 'image/webp'].includes(image.detectedMimeType)
+      ? image.detectedMimeType : '';
+  }
   const mimeType = String(image && image.mimeType ? image.mimeType : '').split(';')[0].trim().toLowerCase();
   if (mimeType.startsWith('image/') && mimeType !== 'image/svg+xml' && mimeType !== 'image/gif') {
     return mimeType;
