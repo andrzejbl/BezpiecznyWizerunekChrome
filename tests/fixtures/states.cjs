@@ -62,8 +62,8 @@ const popupCases = [
       ...state.images,
       { ...clone(fixture.image), url: 'https://cdn.example.net/small.jpg' },
       { ...clone(fixture.image), url: 'https://cdn.example.net/broken.jpg' },
-      // Format nadal wykluczony; obsługę PNG sprawdzają osobne testy nowego zachowania.
-      { ...clone(fixture.image), url: 'https://cdn.example.net/icon.webp', mimeType: 'image/webp' },
+      // GIF nadal jest wykluczony; PNG i WebP sprawdzają osobne testy.
+      { ...clone(fixture.image), url: 'https://cdn.example.net/icon.gif', mimeType: 'image/gif' },
       { ...clone(fixture.image), url: 'https://cdn.example.net/private.jpg', bodyComparison: { improperAuthorization: false } }
     ];
     return state;

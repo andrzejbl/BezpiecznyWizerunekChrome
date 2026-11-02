@@ -24,14 +24,14 @@ export function getImageDimensionKey(image) {
 export function isExcludedImageFormat(image) {
   const mimeType = String(image.mimeType || '').toLowerCase();
   if (mimeType) {
-    return mimeType !== 'image/jpeg' && mimeType !== 'image/jpg' && mimeType !== 'image/pjpeg' && mimeType !== 'image/png';
+    return mimeType !== 'image/jpeg' && mimeType !== 'image/jpg' && mimeType !== 'image/pjpeg' && mimeType !== 'image/png' && mimeType !== 'image/webp';
   }
 
   try {
     const pathname = new URL(image.url).pathname.toLowerCase();
-    return !/\.(?:jpe?g|png)$/i.test(pathname);
+    return !/\.(?:jpe?g|png|webp)$/i.test(pathname);
   } catch (error) {
-    return !/\.(?:jpe?g|png)(?:[?#]|$)/i.test(String(image.url || ''));
+    return !/\.(?:jpe?g|png|webp)(?:[?#]|$)/i.test(String(image.url || ''));
   }
 }
 

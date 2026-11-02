@@ -21,7 +21,7 @@ Rozszerzenie Chrome Manifest V3 do oceny, czy aktualna strona ujawnia zdjęcia, 
 7. Główne podsumowanie opisuje skutek dla prywatności i podaje prosty następny krok.
 8. Zakładki `Zdjęcia`, `Domeny zewnętrzne` i `Pola hasła` zawierają dowody techniczne.
 
-Widok zdjęć pokazuje zdjęcia JPEG/JPG lub PNG z dłuższym bokiem co najmniej 200 px, których treść pobrana bez aktywnej sesji jest identyczna z treścią odpowiedzi zarejestrowanej podczas sesji. Oba formaty podlegają tym samym warunkom kwalifikacji. Taki wynik jest klasyfikowany jako brak poprawnej autoryzacji użytkownika: serwer może uwierzytelnić token w URL-u, ale nie uzależnia dostępu od potwierdzenia tożsamości i uprawnienia osoby pobierającej. Dwa kwadratowe kafelki wypełniają całą dostępną szerokość okna rozszerzenia i używają `object-fit: contain`.
+Widok zdjęć pokazuje zdjęcia JPEG/JPG, PNG lub WebP z dłuższym bokiem co najmniej 200 px, których treść pobrana bez aktywnej sesji jest identyczna z treścią odpowiedzi zarejestrowanej podczas sesji. Wszystkie trzy formaty podlegają tym samym warunkom kwalifikacji. Taki wynik jest klasyfikowany jako brak poprawnej autoryzacji użytkownika: serwer może uwierzytelnić token w URL-u, ale nie uzależnia dostępu od potwierdzenia tożsamości i uprawnienia osoby pobierającej. Dwa kwadratowe kafelki wypełniają całą dostępną szerokość okna rozszerzenia i używają `object-fit: contain`.
 
 Domeny zewnętrzne są grupowane po głównej domenie. Domeny tej samej strony, skrypty inline/eval/blob i zasoby browser/internal są pomijane. Skrypty zablokowane jako `ERR_BLOCKED_BY_CLIENT` pozostają w dowodach jako niewykonane lokalnie, ale potencjalnie możliwe bez blokującego rozszerzenia.
 
@@ -51,7 +51,7 @@ Raport dokumentuje wynik techniczny. Nie zastępuje prawnej oceny naruszenia i n
 
 Rozszerzenie używa `chrome.debugger`, a nie `webRequest`. Nie deklaruje stałych `host_permissions` i nie wysyła danych na zewnętrzne serwery.
 
-Dla zdjęć rozszerzenie porównuje treść oryginalnej odpowiedzi z treścią pobraną przez CDP `Network.loadNetworkResource` w ramie strony z `includeCredentials: false` i `disableCache: true`. Wynik wymaga statusów HTTP 2xx, identycznego SHA-256 i identycznej długości treści odpowiedzi. Nagłówki używane do oceny zasad pamięci podręcznej, `X-Robots-Tag` i CORS pochodzą bezpośrednio z odpowiedzi tego żądania bez aktywnej sesji.
+Dla zdjęć rozszerzenie odczytuje treść oryginalnej odpowiedzi przez CDP `Network.getResponseBody` i porównuje ją z treścią pobraną przez `fetch` w service workerze rozszerzenia z `credentials: "omit"` i `cache: "no-store"`. Wynik wymaga statusów HTTP 2xx, identycznego SHA-256 i identycznej długości treści odpowiedzi. Nagłówki używane do oceny zasad pamięci podręcznej, `X-Robots-Tag` i CORS pochodzą bezpośrednio z odpowiedzi tego żądania bez aktywnej sesji.
 
 Raport przyjmuje, że użytkownik wzrokowo zweryfikował, iż analizowane zdjęcia zawierają dane osobowe oraz że dostęp powinien być ograniczony do zidentyfikowanej i uprawnionej osoby. Wydanie identycznego pliku bez aktywnej sesji, bez powiązania dostępu z tożsamością i uprawnieniem osoby pobierającej, jest klasyfikowane jako nieprawidłowa autoryzacja `CWE-863`. Ujawnienie zweryfikowanych danych osobowych jest mapowane do `CWE-359`. Pozostałe mapowania to `CWE-525` dla pamięci podręcznej, `CWE-830` dla kodu z niezaufanego źródła, `CWE-942` dla nadmiernie otwartego CORS oraz `CWE-522` dla niewystarczającej ochrony danych uwierzytelniających.
 

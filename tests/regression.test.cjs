@@ -25,12 +25,14 @@ test('static appearance and extension permissions are preserved', async () => {
   ]);
   const newRules = /(?:body\[data-risk="unknown"\] \.risk-hero|\.security-wheel\[data-state="uncertain"\](?: small)?|\.password-group \.password-unknown) \{[^}]*\}\r?\n\r?\n/g;
   assert.equal([...css.matchAll(newRules)].length, 4, 'Only the four styles for unknown password access are added');
-  assert.equal(css.replace(newRules, ''), oldCss, 'Existing CSS remains byte-for-byte identical');
+  assert.equal(css.replace(/\r\n/g, '\n').replace(newRules, ''), oldCss.replace(/\r\n/g, '\n'), 'Existing CSS remains byte-for-byte identical');
   const withoutScripts = (value) => value.replace(/\s*<script\b[^>]*>[\s\S]*?<\/script>/g, '').replace(/\r\n/g, '\n').trim();
   assert.equal(withoutScripts(html), withoutScripts(oldHtml), 'Visible HTML must remain identical');
   const actual = JSON.parse(manifest);
   const expected = JSON.parse(oldManifest);
   delete actual.background.type;
+  assert.equal(actual.version, '2.1.17');
+  actual.version = expected.version;
   assert.deepEqual(actual, expected, 'Only the background module loading mode may change');
 });
 
@@ -82,23 +84,25 @@ test('popup preserves copy, JSON and CSV export contents', async () => {
   assert.equal((await after.downloads()).length, 3);
 });
 
-test('PNG spełniający warunki trafia do widoku, podsumowania, schowka oraz JSON, PDF i ZIP', async () => {
-  // Atrapa Image symuluje wymiary i błędy; podgląd PNG jest wejściem adaptera raportu.
+for (const format of ['png', 'webp']) test(format.toUpperCase() + ' spełniający warunki trafia do widoku, podsumowania, schowka oraz JSON, PDF i ZIP', async () => {
+  // Atrapa Image symuluje wymiary i błędy; podgląd PNG/WebP jest wejściem adaptera raportu.
   const png = {
     ...clone(fixture.image),
-    url: 'https://cdn.example.net/photo.png',
-    mimeType: 'image/png',
-    headers: { ...clone(fixture.image.headers), 'content-type': 'image/png' },
-    previewDataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII='
+    url: 'https://cdn.example.net/photo.' + format,
+    mimeType: 'image/' + format,
+    headers: { ...clone(fixture.image.headers), 'content-type': 'image/' + format },
+    previewDataUrl: format === 'webp'
+      ? 'data:image/webp;base64,UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA'
+      : 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXioAAAAASUVORK5CYII='
   };
   delete png.reportPreviewJpeg;
   const withoutPreview = { ...png, previewDataUrl: '' };
   const images = [
     png,
-    { ...withoutPreview, url: 'https://cdn.example.net/small.png' },
-    { ...withoutPreview, url: 'https://cdn.example.net/broken.png' },
-    { ...withoutPreview, url: 'https://cdn.example.net/private.png', bodyComparison: { improperAuthorization: false } },
-    { ...withoutPreview, url: 'https://cdn.example.net/icon.webp', mimeType: 'image/webp' }
+    { ...withoutPreview, url: 'https://cdn.example.net/small.' + format },
+    { ...withoutPreview, url: 'https://cdn.example.net/broken.' + format },
+    { ...withoutPreview, url: 'https://cdn.example.net/private.' + format, bodyComparison: { improperAuthorization: false } },
+    { ...withoutPreview, url: 'https://cdn.example.net/icon.gif', mimeType: 'image/gif' }
   ];
   const state = emptyState({ ...clone(fixture.latestState), status: 'stopped', scanning: false, attached: false, images, imageCount: images.length });
   const app = await createPopup(false, state);
@@ -120,12 +124,12 @@ test('PNG spełniający warunki trafia do widoku, podsumowania, schowka oraz JSO
   const exportedImages = JSON.parse(json.bytes.toString());
   assert.equal(exportedImages.length, 1);
   assert.equal(exportedImages[0].url, png.url);
-  assert.equal(exportedImages[0].mimeType, 'image/png');
+  assert.equal(exportedImages[0].mimeType, 'image/' + format);
   assert.deepEqual(exportedImages[0].bodyComparison, png.bodyComparison);
   assert.equal(exportedImages[0].previewDataUrl, undefined);
   assert.equal(pdf.bytes.subarray(0, 8).toString(), '%PDF-1.7');
   assert.ok(pdf.bytes.includes(Buffer.from('/DCTDecode')), 'Podgląd do PDF jest kodowany jako JPEG');
-  assert.ok(pdf.bytes.includes(Buffer.from(png.url)), 'PDF zawiera dowód źródłowego PNG');
+  assert.ok(pdf.bytes.includes(Buffer.from(png.url)), 'PDF zawiera dowód źródłowego obrazu');
 
   // Zapis ZIP używa nieskompresowanych wpisów; odczytujemy ich faktyczną treść.
   const entries = new Map();
@@ -146,7 +150,7 @@ test('PNG spełniający warunki trafia do widoku, podsumowania, schowka oraz JSO
   const findings = evidence.findings.improperAuthorizationImages;
   assert.equal(findings.length, 1);
   assert.equal(findings[0].url, png.url);
-  assert.equal(findings[0].mimeType, 'image/png');
+  assert.equal(findings[0].mimeType, 'image/' + format);
   assert.deepEqual(findings[0].bodyComparison, png.bodyComparison);
   assert.equal(findings[0].reportPreviewJpeg, undefined);
   assert.equal(evidence.summary.improperAuthorizationImages, 1);
@@ -266,10 +270,11 @@ function expectedContextAwareResponse(response) {
   return expected;
 }
 
-test('background preserves CDP commands, filtering, body comparisons, password deduplication and stop state', async () => {
+test('background preserves capture and findings while replacing CDP resource loads with fetch', async () => {
   const before = await backgroundScenario(true);
   const after = await backgroundScenario(false);
-  assert.deepEqual(after, { ...before, states: before.states.map(expectedContextAwareResponse) });
+  assert.deepEqual(after, { ...before, commands: before.commands.filter(({ method }) => method !== 'Network.loadNetworkResource'), states: before.states.map(expectedContextAwareResponse) });
+  assert.ok(!after.commands.some(({ method }) => method === 'Network.loadNetworkResource'));
   const result = after.states[2].state;
   assert.equal(result.images.length, 1);
   assert.equal(result.images[0].bodyComparison.exactMatch, true);

@@ -5,8 +5,7 @@
 
 // Przekształcaj zasoby CDP na granicy przesyłania danych. Scenariusze biznesowe nie interpretują uchwytu treści.
 import { sendDebuggerCommand } from './chrome-api.js';
-import { normalizeHeaders } from '../../business/scanning/headers.js';
-import { decodeCdpBodyToBytes, readCdpStream, readCdpStreamBytes } from './cdp-streams.js';
+import { bytesToBase64, decodeCdpBodyToBytes, readCdpStream, readCdpStreamBytes } from './cdp-streams.js';
 import { makeImagePreviewDataUrl } from './image-previews.js';
 
 /**
@@ -27,22 +26,27 @@ export function readCapturedImageBody(tabId, requestId) {
  * @param {string} url
  * @returns {Promise<LoadedResource>}
  */
-export function loadWithoutCredentials(tabId, frameId, url) {
-  return sendDebuggerCommand(tabId, 'Network.loadNetworkResource', {
-    frameId,
-    url,
-    options: { disableCache: true, includeCredentials: false }
-  }, /** @param {{resource?:ResourceBody}} response */ (response) => {
-    const resource = response.resource || {};
-    return {
-      status: typeof resource.httpStatusCode === 'number' ? resource.httpStatusCode : null,
-      headers: normalizeHeaders(resource.headers),
-      succeeded: resource.success !== false,
-      error: resource.netErrorName || resource.netError || '',
-      mimeType: resource.mimeType || '',
-      body: resource
-    };
+export async function loadWithoutCredentials(tabId, frameId, url) {
+  // Omit pomija cookies również dla tego samego originu; nie kopiuj nagłówków żądania strony.
+  const response = await fetch(url, {
+    method: 'GET',
+    credentials: 'omit',
+    cache: 'no-store',
+    redirect: 'follow',
+    referrerPolicy: 'no-referrer'
   });
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  /** @type {Record<string,string>} */
+  const headers = {};
+  response.headers.forEach((value, name) => { headers[name.toLowerCase()] = value; });
+  return {
+    status: response.status,
+    headers,
+    succeeded: true,
+    error: '',
+    mimeType: response.headers.get('content-type') || '',
+    body: { content: bytesToBase64(bytes), base64Encoded: true }
+  };
 }
 
 /**
@@ -50,7 +54,10 @@ export function loadWithoutCredentials(tabId, frameId, url) {
  * @param {ResourceBody} body
  */
 export function readResourceText(tabId, body) {
-  return body.stream ? readCdpStream(tabId, body.stream) : String(body.content || '');
+  if (body.stream) return readCdpStream(tabId, body.stream);
+  return body.base64Encoded
+    ? new TextDecoder().decode(decodeCdpBodyToBytes(body.content || '', true))
+    : String(body.content || '');
 }
 
 /**

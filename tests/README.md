@@ -10,11 +10,11 @@ Polecenie uruchamia trzy zestawy za pomocą wbudowanego mechanizmu uruchamiania 
 
 `fixtures/original/` to niezmienna kopia sześciu plików aplikacji sprzed podziału na moduły: JavaScript, HTML, CSS i manifest. Nie jest ładowana przez rozszerzenie. Nie aktualizuj jej razem z kodem produkcyjnym: służy jako niezależny punkt odniesienia.
 
-Dopuszczenie zdjęć PNG jest celowym wyjątkiem od zgodności z tą kopią: poprzednia
+Dopuszczenie zdjęć PNG i WebP jest celowym wyjątkiem od zgodności z tą kopią: poprzednia
 wersja pomijała PNG w widoku i eksporcie. Obecna przyjmuje je na tych samych
 warunkach co JPEG/JPG. Osobne testy sprawdzają reguły kwalifikacji oraz obecność
-PNG w widoku i eksporcie. W scenariuszu porównującym nieobsługiwany format z dawną
-wersją używamy WebP, które obie wersje nadal pomijają. Zaktualizowane opisy
+PNG i WebP w widoku i eksporcie. W scenariuszu porównującym nieobsługiwany format z dawną
+wersją używamy GIF, które obie wersje nadal pomijają. Zaktualizowane opisy
 obsługiwanych formatów w oknie rozszerzenia i PDF również są zamierzoną różnicą.
 
 Testy uruchamiają obie wersje w osobnych kontekstach i porównują:
@@ -37,3 +37,10 @@ Dodatkowe porównanie zrzutów ekranu w Chrome uruchamia `npm run test:visual`; 
 `architecture.test.cjs` sprawdza kierunek importów, kompletność i brak cykli zależności oraz ładowanie biznesu bez Chrome, DOM, kodowania plików i timerów.
 
 `business-flows.test.cjs` uruchamia scenariusze skanowania, okna rozszerzenia i raportu z prostymi portami testowymi. Sprawdza m.in. kolejność przygotowania obserwacji przed przeładowaniem, zachowanie ustaleń po zatrzymaniu, anulowanie działań, świeżość danych po await i zwolnienie stanu zajętości po błędzie.
+
+
+`cookieless-fetch.test.cjs` sprawdza adapter zasobów po zmianie pobierania na
+`fetch` w service workerze z `credentials: "omit"`, bez kopiowania nagłówków
+Cookie i Authorization. Zachowuje dotychczasowe API odczytu bajtów i robots.txt.
+Testy kwalifikacji i eksportów obejmują także WebP. Pozostała struktura raportu
+i reguły oceny pozostają niezmienione.

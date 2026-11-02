@@ -309,7 +309,13 @@ async function createBackground(original, options = {}) {
       }
     }
   };
-  const { context, clock } = createContext({ chrome });
+  const { context, clock } = createContext({ chrome, fetch: async (url, init) => {
+    if (init.credentials !== 'omit') throw new Error('Oczekiwano pobrania bez cookies.');
+    return new Response(url.endsWith('/robots.txt') ? 'User-agent: *\nAllow: /\n' : 'fixture-image-body', {
+      status: 200,
+      headers: { 'content-type': 'image/jpeg', 'cache-control': 'public, max-age=60', 'access-control-allow-origin': '*' }
+    });
+  } });
   if (original) await loadClassic(context, 'background.js');
   else await createModuleLoader(context).load(path.join(projectRoot, 'background.js'));
   return {

@@ -2,7 +2,7 @@
   "name": "bezpieczny-wizerunek",
   "private": true,
   "scripts": {
-    "test": "node --experimental-vm-modules --test tests/architecture.test.cjs tests/business-flows.test.cjs tests/image-context.test.cjs tests/password-context.test.cjs tests/regression.test.cjs",
+    "test": "node --experimental-vm-modules --test tests/architecture.test.cjs tests/business-flows.test.cjs tests/image-context.test.cjs tests/password-context.test.cjs tests/regression.test.cjs tests/cookieless-fetch.test.cjs",
     "test:visual": "node tests/visual-regression.cjs",
     "typecheck": "tsc --project jsconfig.json"
   },

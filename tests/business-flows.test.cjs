@@ -102,7 +102,7 @@ test('niepoprawny CORS nie zwiększa liczby domen z dostępem do zdjęć', async
   assert.equal(tree.thirdPartyGroups[0].corsPixelAccess.possible, false);
 });
 
-test('PNG jest rozpoznawany po MIME lub rozszerzeniu, a pozostałe formaty zachowują dotychczasowe reguły', async () => {
+test('PNG i WebP są rozpoznawane po MIME lub rozszerzeniu', async () => {
   const { isExcludedImageFormat } = await loadBusiness('popup/image-rules.js');
   const cases = [
     ['image/png', 'https://example.test/download?id=1', false],
@@ -113,9 +113,9 @@ test('PNG jest rozpoznawany po MIME lub rozszerzeniu, a pozostałe formaty zacho
     ['image/jpg', 'https://example.test/photo.jpg', false],
     ['image/pjpeg', 'https://example.test/photo.jpg', false],
     ['', 'https://example.test/photo.jpeg', false],
-    ['image/webp', 'https://example.test/photo.png', true],
+    ['image/webp', 'https://example.test/photo.png', false],
     ['application/octet-stream', 'https://example.test/photo.png', true],
-    ['', 'https://example.test/photo.webp', true],
+    ['', 'https://example.test/photo.webp', false],
     ['', 'https://example.test/photo.png.exe', true],
     ['', 'https://example.test/download?filename=photo.png', true]
   ];
