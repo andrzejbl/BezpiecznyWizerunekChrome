@@ -38,7 +38,7 @@ export function createRobotsFlow({
       throw new Error('Debugger is not attached to a loaded frame.');
     }
 
-    const resource = await loadWithoutCredentials(state.tabId, state.mainFrameId, robotsUrl, ROBOTS_READ_LIMIT_BYTES);
+    const resource = await loadWithoutCredentials(state.tabId, state.mainFrameId, robotsUrl, ROBOTS_READ_LIMIT_BYTES, { skipHttpErrorBody: true });
     const httpStatusCode = resource.status;
     const baseResult = {
       origin,

@@ -31,7 +31,7 @@ test('static appearance and extension permissions are preserved', async () => {
   const actual = JSON.parse(manifest);
   const expected = JSON.parse(oldManifest);
   delete actual.background.type;
-  assert.equal(actual.version, '2.1.22');
+  assert.equal(actual.version, '2.1.23');
   actual.version = expected.version;
   assert.deepEqual(actual, expected, 'Only the background module loading mode may change');
 });

@@ -381,7 +381,7 @@
 /** @typedef {{bytes:Uint8Array<ArrayBuffer>, byteLength?:number, truncated?:boolean, createPreview:(image:ImageRecord)=>string}} CapturedImageBody */
 /**
  * @typedef {object} ResourcePorts
- * @property {(tabId:number,frameId:string,url:string,maxBytes?:number)=>Promise<LoadedResource>} loadWithoutCredentials
+ * @property {(tabId:number,frameId:string,url:string,maxBytes?:number,options?:{skipHttpErrorBody?:boolean})=>Promise<LoadedResource>} loadWithoutCredentials
  * @property {(tabId:number,body:import('./cdp.js').ResourceBody)=>string|Promise<string>} readResourceText
  * @property {(tabId:number,body:import('./cdp.js').ResourceBody,maxBytes:number)=>Uint8Array<ArrayBuffer>|Promise<Uint8Array<ArrayBuffer>>} readResourceBytes
  * @property {(tabId:number,requestId:string)=>Promise<CapturedImageBody>} readCapturedImageBody

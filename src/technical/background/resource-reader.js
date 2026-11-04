@@ -64,11 +64,12 @@ export async function readCapturedImageBody(tabId, requestId) {
  * @param {string} frameId
  * @param {string} url
  * @param {number} [maxBytes]
+ * @param {{skipHttpErrorBody?:boolean}} [options]
  * @returns {Promise<LoadedResource>}
  */
-export async function loadWithoutCredentials(tabId, frameId, url, maxBytes = IMAGE_BODY_COMPARE_MAX_BYTES) {
+export async function loadWithoutCredentials(tabId, frameId, url, maxBytes = IMAGE_BODY_COMPARE_MAX_BYTES, options) {
   // Parametry karty zachowują kontrakt portu; pobranie zawsze należy do własnego workera.
-  const resource = await loadBackgroundResource(url, maxBytes);
+  const resource = await loadBackgroundResource(url, maxBytes, options);
   const headers = normalizeHeaders(resource.headers);
   return {
     status: typeof resource.httpStatusCode === 'number' ? resource.httpStatusCode : null,
